@@ -1,0 +1,49 @@
+/* src/App.css */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #1e1e1e;
+  font-family: sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  width: 640px;
+  height: 640px;
+  border: 4px solid #333;
+  box-shadow: 0 0 12px #000;
+}
+
+.row {
+  display: flex;
+  flex: 1;
+}
+
+.square {
+  flex: 1;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  cursor: pointer;
+  position: relative;
+}
+
+.light {
+  background-color: #f0d9b5;
+}
+
+.dark {
+  background-color: #b58863;
+}
+
+.selected {
+  box-shadow: inset 0 0 0 3px #0af;
+  z-index: 1;
+}
