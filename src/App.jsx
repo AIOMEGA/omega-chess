@@ -223,6 +223,37 @@ function getValidQueenMoves(board, row, col, piece) {
 }
 
 
+function getValidKnightMoves(board, row, col, piece) {
+  const isWhite = piece === '♘';
+  const isBlack = piece === '♞';
+
+  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
+  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
+  const validMoves = [];
+
+  for (let dr = -2; dr <= 2; dr++) {
+    for (let dc = -2; dc <= 2; dc++) {
+      if (dr === 0 && dc === 0) continue; // skip current square
+      const r = row + dr;
+      const c = col + dc;
+      if (r < 0 || r >= 8 || c < 0 || c >= 8) continue;
+
+      const target = board[r][c];
+      if (target === '') {
+        validMoves.push([r, c]);
+      } else {
+        const isEnemy = isWhite
+          ? blackPieces.includes(target)
+          : whitePieces.includes(target);
+        if (isEnemy) {
+          validMoves.push([r, c]);
+        }
+      }
+    }
+  }
+
+  return validMoves;
+}
 
 
 
@@ -285,6 +316,10 @@ function App() {
     if (selectedPiece === '♕' || selectedPiece === '♛') {
       validMoves = getValidQueenMoves(board, selected.row, selected.col, selectedPiece);
     }
+    if (selectedPiece === '♘' || selectedPiece === '♞') {
+      validMoves = getValidKnightMoves(board, selected.row, selected.col, selectedPiece);
+    }
+    
 
     
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
