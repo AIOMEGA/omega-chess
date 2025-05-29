@@ -94,6 +94,60 @@ function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
   return validMoves;
 }
 
+function getValidRookMoves(board, row, col, piece) {
+  const isWhite = piece === '♖';
+  const isBlack = piece === '♜';
+
+  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
+  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
+
+  const validMoves = [];
+  const directions = [
+    [-1, 0], // up
+    [1, 0],  // down
+    [0, -1], // left
+    [0, 1],  // right
+  ];
+
+  for (const [dr, dc] of directions) {
+    let r = row + dr;
+    let c = col + dc;
+    let blockerFound = false;
+
+    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+      const target = board[r][c];
+
+      if (!blockerFound) {
+        if (target === '') {
+          validMoves.push([r, c]); // normal movement
+        } else {
+          const isEnemy = (isWhite && blackPieces.includes(target)) || (isBlack && whitePieces.includes(target));
+          if (isEnemy) {
+            validMoves.push([r, c]); // capture the blocker
+          }
+
+          blockerFound = true; // now check one square past
+        }
+      } else {
+        const behindPiece = board[r][c];
+        const isEnemy = (isWhite && blackPieces.includes(behindPiece)) || (isBlack && whitePieces.includes(behindPiece));
+
+        if (behindPiece === '' || isEnemy) {
+          validMoves.push([r, c]); // jump move: land only directly behind
+        }
+
+        break; // only allowed to hop 1 piece
+      }
+
+      r += dr;
+      c += dc;
+    }
+  }
+
+  return validMoves;
+}
+
+
 
 
 function App() {
@@ -140,6 +194,10 @@ function App() {
     if (selectedPiece === '♙' || selectedPiece === '♟') {
       validMoves = getValidPawnMoves(board, selected.row, selected.col, selectedPiece, enPassantTarget);
     }
+    if (selectedPiece === '♖' || selectedPiece === '♜') {
+      validMoves = getValidRookMoves(board, selected.row, selected.col, selectedPiece);
+    }
+    
     
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
     
