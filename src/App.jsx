@@ -167,42 +167,41 @@ function getValidQueenMoves(board, row, col, piece) {
   const isBlocked = (r, c) => board[r][c] !== '';
 
   function hasLineOfSight(toRow, toCol) {
-    const startX = col + 0.5;
-    const startY = row + 0.5;
-    const endX = toCol + 0.5;
-    const endY = toRow + 0.5;
+    const squareSize = 105;
+  
+    const startX = col * squareSize + 53;
+    const startY = row * squareSize + 53;
+    const endX = toCol * squareSize + 53;
+    const endY = toRow * squareSize + 53;
   
     const dx = endX - startX;
     const dy = endY - startY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const steps = Math.ceil(distance * 10); // finer resolution = more accurate
+    const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 30); // higher = smoother
   
-    let prevTile = `${Math.floor(startY)}-${Math.floor(startX)}`;
+    let prevTile = null;
   
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const x = startX + dx * t;
       const y = startY + dy * t;
   
-      const tileRow = Math.floor(y);
-      const tileCol = Math.floor(x);
+      const tileRow = Math.floor(y / squareSize);
+      const tileCol = Math.floor(x / squareSize);
       const tileId = `${tileRow}-${tileCol}`;
   
-      if (tileId !== prevTile) {
-        if (
-          (tileRow !== row || tileCol !== col) &&        // not Queen’s own square
-          (tileRow !== toRow || tileCol !== toCol) &&    // not destination square
-          board[tileRow]?.[tileCol] !== ''               // something in the way
-        ) {
-          return false;
-        }        
-        prevTile = tileId;
+      if (
+        tileId !== prevTile &&
+        !(tileRow === row && tileCol === col) &&
+        !(tileRow === toRow && tileCol === toCol)
+      ) {
+        if (board[tileRow]?.[tileCol] !== '') return false;
       }
+  
+      prevTile = tileId;
     }
   
     return true;
   }
-  
   
   
 
@@ -414,7 +413,7 @@ function App() {
 
   return (
     <div style={{ position: 'relative', width: '840px', height: '840px' }}>
-      {/* <svg
+      <svg
         width="840"
         height="840"
         style={{
@@ -447,7 +446,7 @@ function App() {
               );
             }
           )}
-      </svg> */}
+      </svg>
 
       {/* Your board rendering stays the same below */}
       <div className="board" style={{ zIndex: 1, position: 'relative' }}>
