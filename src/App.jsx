@@ -234,6 +234,8 @@ function getValidKnightMoves(board, row, col, piece) {
   for (let dr = -2; dr <= 2; dr++) {
     for (let dc = -2; dc <= 2; dc++) {
       if (dr === 0 && dc === 0) continue; // skip current square
+      if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) continue; // skip 3x3 core
+
       const r = row + dr;
       const c = col + dc;
       if (r < 0 || r >= 8 || c < 0 || c >= 8) continue;
@@ -257,9 +259,54 @@ function getValidKnightMoves(board, row, col, piece) {
 
 
 
+function getValidBishopMoves(board, row, col, piece) {
+  const isWhite = piece === '♗';
+  const isBlack = piece === '♝';
 
+  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
+  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
+  const validMoves = [];
 
+  const isEnemy = (target) =>
+    isWhite ? blackPieces.includes(target) : whitePieces.includes(target);
 
+  const directions = [
+    [-1, -1], [-1, 0], [-1, 1],
+    [ 0, -1],          [ 0, 1],
+    [ 1, -1], [ 1, 0], [ 1, 1],
+  ];
+
+  // Bishop-style infinite diagonals (4 directions only)
+  for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    let r = row + dr;
+    let c = col + dc;
+    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+      const target = board[r][c];
+      if (target === '') {
+        validMoves.push([r, c]);
+      } else {
+        if (isEnemy(target)) validMoves.push([r, c]);
+        break;
+      }
+      r += dr;
+      c += dc;
+    }
+  }
+
+  // King-style 1-tile in any direction (orthogonal + diagonal)
+  for (const [dr, dc] of directions) {
+    const r = row + dr;
+    const c = col + dc;
+    if (r >= 0 && r < 8 && c >= 0 && c < 8) {
+      const target = board[r][c];
+      if (target === '' || isEnemy(target)) {
+        validMoves.push([r, c]);
+      }
+    }
+  }
+
+  return validMoves;
+}
 
 
 
@@ -318,6 +365,9 @@ function App() {
     }
     if (selectedPiece === '♘' || selectedPiece === '♞') {
       validMoves = getValidKnightMoves(board, selected.row, selected.col, selectedPiece);
+    }
+    if (selectedPiece === '♗' || selectedPiece === '♝') {
+      validMoves = getValidBishopMoves(board, selected.row, selected.col, selectedPiece);
     }
     
 
