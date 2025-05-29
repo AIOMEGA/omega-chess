@@ -147,6 +147,88 @@ function getValidRookMoves(board, row, col, piece) {
   return validMoves;
 }
 
+function getSquareCenter(row, col, squareSize = 105) {
+  const x = col * squareSize + squareSize / 2;
+  const y = row * squareSize + squareSize / 2;
+  return { x, y };
+}
+
+function getValidQueenMoves(board, row, col, piece) {
+  const isWhite = piece === '♕';
+  const isBlack = piece === '♛';
+
+  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
+  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
+  const validMoves = [];
+
+  const isEnemy = (target) =>
+    isWhite ? blackPieces.includes(target) : whitePieces.includes(target);
+
+  const isBlocked = (r, c) => board[r][c] !== '';
+
+  function hasLineOfSight(toRow, toCol) {
+    const startX = col + 0.5;
+    const startY = row + 0.5;
+    const endX = toCol + 0.5;
+    const endY = toRow + 0.5;
+  
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const steps = Math.ceil(distance * 10); // finer resolution = more accurate
+  
+    let prevTile = `${Math.floor(startY)}-${Math.floor(startX)}`;
+  
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const x = startX + dx * t;
+      const y = startY + dy * t;
+  
+      const tileRow = Math.floor(y);
+      const tileCol = Math.floor(x);
+      const tileId = `${tileRow}-${tileCol}`;
+  
+      if (tileId !== prevTile) {
+        if (
+          (tileRow !== row || tileCol !== col) &&        // not Queen’s own square
+          (tileRow !== toRow || tileCol !== toCol) &&    // not destination square
+          board[tileRow]?.[tileCol] !== ''               // something in the way
+        ) {
+          return false;
+        }        
+        prevTile = tileId;
+      }
+    }
+  
+    return true;
+  }
+  
+  
+  
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (r === row && c === col) continue;
+
+      if (hasLineOfSight(r, c)) {
+        const target = board[r][c];
+        if (target === '' || isEnemy(target)) {
+          validMoves.push([r, c]);
+        }
+      }
+    }
+  }
+
+  return validMoves;
+}
+
+
+
+
+
+
+
+
 
 
 
@@ -191,13 +273,19 @@ function App() {
 
     let validMoves = [];
 
+
+    // Movement logic
+
     if (selectedPiece === '♙' || selectedPiece === '♟') {
       validMoves = getValidPawnMoves(board, selected.row, selected.col, selectedPiece, enPassantTarget);
     }
     if (selectedPiece === '♖' || selectedPiece === '♜') {
       validMoves = getValidRookMoves(board, selected.row, selected.col, selectedPiece);
     }
-    
+    if (selectedPiece === '♕' || selectedPiece === '♛') {
+      validMoves = getValidQueenMoves(board, selected.row, selected.col, selectedPiece);
+    }
+
     
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
     
@@ -240,33 +328,71 @@ function App() {
   
 
   return (
-    <div className="board">
-      {board.map((rowArr, row) => (
-        <div key={row} className="row">
-          {rowArr.map((piece, col) => {
-            const isDark = (row + col) % 2 === 1;
-            const isSelected = selected?.row === row && selected?.col === col;
+    <div style={{ position: 'relative', width: '840px', height: '840px' }}>
+      {/* <svg
+        width="840"
+        height="840"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          zIndex: 5,
+          pointerEvents: 'none',
+        }}
+      >
 
-            return (
-              <div
-                key={col}
-                className={`square ${isDark ? 'dark' : 'light'} ${isSelected ? 'selected' : ''}`}
-                onClick={() => handleClick(row, col)}
-              >
-                {piece && (
-                  <img
-                    src={`/src/assets/pieces/${pieceImages[piece]}`}
-                    alt={piece}
-                    style={{ width: '80%', height: '80%' }}
-                  />
-                )}
+        {selected &&
+          (board[selected.row][selected.col] === '♕' ||
+            board[selected.row][selected.col] === '♛') &&
+          getValidQueenMoves(board, selected.row, selected.col, board[selected.row][selected.col]).map(
+            ([r, c], i) => {
+              const start = getSquareCenter(selected.row, selected.col);
+              const end = getSquareCenter(r, c);
+              return (
+                <line
+                  key={i}
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke="lime"
+                  strokeWidth="3"
+                  strokeOpacity="0.6"
+                />
+              );
+            }
+          )}
+      </svg> */}
 
-              </div>
-            );
-          })}
-        </div>
-      ))}
+      {/* Your board rendering stays the same below */}
+      <div className="board" style={{ zIndex: 1, position: 'relative' }}>
+        {board.map((rowArr, row) => (
+          <div key={row} className="row">
+            {rowArr.map((piece, col) => {
+              const isDark = (row + col) % 2 === 1;
+              const isSelected = selected?.row === row && selected?.col === col;
+
+              return (
+                <div
+                  key={col}
+                  className={`square ${isDark ? 'dark' : 'light'} ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleClick(row, col)}
+                >
+                  {piece && (
+                    <img
+                      src={`/src/assets/pieces/${pieceImages[piece]}`}
+                      alt={piece}
+                      style={{ width: '80%', height: '80%' }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
+    
   );
 }
 
