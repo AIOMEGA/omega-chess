@@ -169,14 +169,14 @@ function getValidQueenMoves(board, row, col, piece) {
   function hasLineOfSight(toRow, toCol) {
     const squareSize = 105;
   
-    const startX = col * squareSize + 53;
-    const startY = row * squareSize + 53;
-    const endX = toCol * squareSize + 53;
-    const endY = toRow * squareSize + 53;
+    const startX = col * squareSize + 52.5 + 4;
+    const startY = row * squareSize + 52.5 + 4;
+    const endX = toCol * squareSize + 52.5 + 4;
+    const endY = toRow * squareSize + 52.5 + 4;
   
     const dx = endX - startX;
     const dy = endY - startY;
-    const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 30); // higher = smoother
+    const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 48); // higher = smoother
   
     let prevTile = null;
   
@@ -665,8 +665,23 @@ function App() {
           return validMoves.map(([r, c], i) => {
             const target = board[r][c];
             const isEnemy = target && !isSameTeam(piece, target);
+            const startX = selected.col * 105 + 52.5 + 4;
+            const startY = selected.row * 105 + 52.5 + 4;
+            const endX = c * 105 + 52.5 + 4;
+            const endY = r * 105 + 52.5 + 4;
             if (isEnemy) {
               return (
+              //   <line
+              //   key={"line-" + i}
+              //   x1={startX}
+              //   y1={startY}
+              //   x2={endX}
+              //   y2={endY}
+              //   stroke="lime"
+              //   strokeWidth={3}
+              //   strokeOpacity={0.6}
+              // />
+
                 <circle
                   key={"attack-" + i}
                   cx={c * 105 + 52.5 + 4}
@@ -680,6 +695,17 @@ function App() {
               );
             }
             return (
+              // <line
+              //   key={"line-" + i}
+              //   x1={startX}
+              //   y1={startY}
+              //   x2={endX}
+              //   y2={endY}
+              //   stroke="lime"
+              //   strokeWidth={3}
+              //   strokeOpacity={0.6}
+              // />
+                
               <circle
                 key={"move-" + i}
                 cx={c * 105 + 52.5 + 4}
