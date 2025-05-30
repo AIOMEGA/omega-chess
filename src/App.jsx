@@ -456,6 +456,7 @@ function App() {
 
     // Prevent capturing own piece
     if (targetPiece && isSameTeam(selectedPiece, targetPiece)) {
+      setSelected({ row, col });
       return;
     }
 
@@ -651,27 +652,45 @@ function App() {
         }}
       >
 
-        {selected &&
-          (board[selected.row][selected.col] === '♕' ||
-            board[selected.row][selected.col] === '♛') &&
-          getValidQueenMoves(board, selected.row, selected.col, board[selected.row][selected.col]).map(
-            ([r, c], i) => {
-              const start = getSquareCenter(selected.row, selected.col);
-              const end = getSquareCenter(r, c);
+        {selected && (() => {
+          let validMoves = [];
+          const piece = board[selected.row][selected.col];
+          if (piece === '♙' || piece === '♟') validMoves = getValidPawnMoves(board, selected.row, selected.col, piece, enPassantTarget);
+          else if (piece === '♖' || piece === '♜') validMoves = getValidRookMoves(board, selected.row, selected.col, piece);
+          else if (piece === '♕' || piece === '♛') validMoves = getValidQueenMoves(board, selected.row, selected.col, piece);
+          else if (piece === '♘' || piece === '♞') validMoves = getValidKnightMoves(board, selected.row, selected.col, piece);
+          else if (piece === '♗' || piece === '♝') validMoves = getValidBishopMoves(board, selected.row, selected.col, piece);
+          else if (piece === '♔' || piece === '♚') validMoves = getValidKingMoves(board, selected.row, selected.col, piece, kingState);
+
+          return validMoves.map(([r, c], i) => {
+            const target = board[r][c];
+            const isEnemy = target && !isSameTeam(piece, target);
+            if (isEnemy) {
               return (
-                <line
-                  key={i}
-                  x1={start.x}
-                  y1={start.y}
-                  x2={end.x}
-                  y2={end.y}
-                  stroke="lime"
-                  strokeWidth="3"
-                  strokeOpacity="0.6"
+                <circle
+                  key={"attack-" + i}
+                  cx={c * 105 + 52.5 + 4}
+                  cy={r * 105 + 52.5 + 4}
+                  r={43}
+                  fill="none"
+                  stroke="black"
+                  strokeWidth={10}
+                  opacity="0.2"
                 />
               );
             }
-          )}
+            return (
+              <circle
+                key={"move-" + i}
+                cx={c * 105 + 52.5 + 4}
+                cy={r * 105 + 52.5 + 4}
+                r={15}
+                fill="black"
+                opacity="0.2"
+              />
+            );
+          });
+        })()}
       </svg>
 
       {summonOptions && (
@@ -778,6 +797,30 @@ function App() {
                   className={`square ${isDark ? 'dark' : 'light'} ${isSelected ? 'selected' : ''}`}
                   onClick={() => handleClick(row, col)}
                 >
+                  <div
+                    className="label"
+                    style={{
+                      position: 'absolute',
+                      top: '4px',
+                      left: '7px',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      color: isDark ? '#f0d9b5' : '#b58863',
+                    }}>
+                    {col === 0 ? 8 - row : ''}
+                  </div>
+                  <div
+                    className="label"
+                    style={{
+                      position: 'absolute',
+                      bottom: '4px',
+                      right: '10px',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      color: isDark ? '#f0d9b5' : '#b58863',
+                    }}>
+                    {row === 7 ? String.fromCharCode(97 + col) : ''}
+                  </div>
                   {piece && (
                     <img
                       src={`/src/assets/pieces/${pieceImages[piece]}`}
