@@ -307,12 +307,97 @@ function getValidBishopMoves(board, row, col, piece) {
   return validMoves;
 }
 
+function getValidKingMoves(board, row, col, piece, kingState) {
+  const isWhite = piece === '♔';
+  const isBlack = piece === '♚';
 
+  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
+  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
+  const isEnemy = (target) =>
+    isWhite ? blackPieces.includes(target) : whitePieces.includes(target);
+  const isSameTeam = (target) =>
+    isWhite ? whitePieces.includes(target) : blackPieces.includes(target);
+
+  const directions = [
+    [-1, -1], [-1, 0], [-1, 1],
+    [ 0, -1],          [ 0, 1],
+    [ 1, -1], [ 1, 0], [ 1, 1],
+  ];
+
+  const validMoves = [];
+
+  for (const [dr, dc] of directions) {
+    const r = row + dr;
+    const c = col + dc;
+    if (r < 0 || r >= 8 || c < 0 || c >= 8) continue;
+
+    const target = board[r][c];
+    if (target === '' || isEnemy(target)) {
+      validMoves.push([r, c]);
+    }
+  }
+
+  // ✅ Summoning check
+  const homeRow = isWhite ? 7 : 0;
+  const enemyRow = isWhite ? 0 : 7;
+
+  const canSummon =
+    row === enemyRow &&
+    !kingState.hasSummoned &&
+    (!kingState.needsReturn || kingState.returnedHome);
+
+  if (canSummon) {
+    for (const offset of [-1, 1]) {
+      const c = col + offset;
+      if (c >= 0 && c < 8 && board[row][c] === '') {
+        validMoves.push(['summon', row, c]); // Special indicator
+      }
+    }
+  }
+
+  return validMoves;
+}
+
+function performSummon(board, row, col, color, pieceType = '♕') {
+  const newBoard = board.map(r => [...r]);
+  newBoard[row][col] = pieceType;
+  return newBoard;
+}
 
 function App() {
   const [board, setBoard] = useState(initialBoard);
   const [selected, setSelected] = useState(null);
   const [enPassantTarget, setEnPassantTarget] = useState(null); // e.g. { row: 3, col: 4 }
+
+  const [kingState, setKingState] = useState({
+    white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+    black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+  });
+  
+  const [showSummonMenu, setShowSummonMenu] = useState(null); // { row, col, side }
+  const [pendingSummonPiece, setPendingSummonPiece] = useState(null);
+
+  const [summonOptions, setSummonOptions] = useState(null); // e.g., { row: 0, col: 4, color: 'black' }
+  
+  const pieceImagesMap = {
+    white: {
+      '♕': 'wQ.svg',
+      '♘': 'wN.svg',
+      '♖': 'wR.svg',
+      '♗': 'wB.svg',
+    },
+    black: {
+      '♛': 'bQ.svg',
+      '♞': 'bN.svg',
+      '♜': 'bR.svg',
+      '♝': 'bB.svg',
+    }
+  };  
+
+  const summonSymbols =
+  summonOptions?.color === 'white'
+    ? ['♕', '♘', '♖', '♗']
+    : ['♛', '♞', '♜', '♝'];
 
   const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
   const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
@@ -325,6 +410,13 @@ function App() {
 
   const handleClick = (row, col) => {
     const piece = board[row][col];
+    const color = piece === '♔' ? 'white' : 'black';
+    const currentState = kingState[color];  
+
+    if (summonOptions) {
+      setSummonOptions(null);
+      return;
+    }    
 
     // Clicked selected piece again? Deselect
     if (selected && selected.row === row && selected.col === col) {
@@ -368,6 +460,9 @@ function App() {
     if (selectedPiece === '♗' || selectedPiece === '♝') {
       validMoves = getValidBishopMoves(board, selected.row, selected.col, selectedPiece);
     }
+    if (selectedPiece === '♔' || selectedPiece === '♚') {
+      validMoves = getValidKingMoves(board, selected.row, selected.col, selectedPiece, kingState);
+    }
     
 
     
@@ -402,6 +497,45 @@ function App() {
       newBoard[row][col] = selectedPiece;
       newBoard[selected.row][selected.col] = '';
       setBoard(newBoard);
+
+      // if (
+      //   (selectedPiece === '♔' || selectedPiece === '♚') &&
+      //   row === (selectedPiece === '♔' ? 0 : 7) &&
+      //   !kingState[pieceColor].hasSummoned &&
+      //   (!kingState[pieceColor].needsReturn || kingState[pieceColor].returnedHome)
+      // ) {
+      //   setSummonOptions({ row, col, color: pieceColor });
+      // }
+      
+
+      if (selectedPiece === '♔' || selectedPiece === '♚') {
+        const isWhite = selectedPiece === '♔';
+        const homeRow = isWhite ? 7 : 0;
+        const enemyRow = isWhite ? 0 : 7;
+        const pieceColor = isWhite ? 'white' : 'black';
+
+        const isBackHome = row === homeRow;
+
+        // Check if summon GUI should be shown
+        if (
+          row === enemyRow &&
+          !kingState[pieceColor].hasSummoned &&
+          (!kingState[pieceColor].needsReturn || kingState[pieceColor].returnedHome)
+        ) {
+          setSummonOptions({ row, col, color: pieceColor });
+        }
+
+        setKingState(prev => ({
+          ...prev,
+          [pieceColor]: {
+            ...prev[pieceColor],
+            returnedHome: isBackHome ? true : prev[pieceColor].returnedHome,
+            hasSummoned: isBackHome ? false : prev[pieceColor].hasSummoned,
+            needsReturn: isBackHome ? false : prev[pieceColor].needsReturn,
+          }
+        }));
+      }
+   
     }
     setSelected(null);
     
@@ -413,7 +547,7 @@ function App() {
 
   return (
     <div style={{ position: 'relative', width: '840px', height: '840px' }}>
-      <svg
+      {/* <svg
         width="840"
         height="840"
         style={{
@@ -446,7 +580,55 @@ function App() {
               );
             }
           )}
-      </svg>
+      </svg> */}
+
+      {summonOptions && (
+        <div className="summon-ui">
+          {[summonOptions.col - 1, summonOptions.col + 1]
+            .filter(c => {
+              const neighborPiece = board[summonOptions.row]?.[c];
+              if (!neighborPiece) return true;
+              return !isSameTeam(neighborPiece, summonOptions.color === 'white' ? '♙' : '♟');
+            })
+            .filter(c => c >= 0 && c < 8) // prevent out-of-bounds
+            .map((c) => (
+              <div
+                key={c}
+                className="summon-column"
+                style={{
+                  left: `${c * 105}px`,
+                  top: `${summonOptions.row * 105 - (summonOptions.color === 'black' ? 315 : 0)}px`,
+                }}
+              >
+                {summonSymbols.map((symbol, i) => (
+                  <img
+                    key={i}
+                    src={`/src/assets/pieces/${pieceImagesMap[summonOptions.color][symbol]}`}
+                    alt={symbol}
+                    style={{ width: '80px', height: '80px', margin: '5px', cursor: 'pointer' }}
+                    onClick={() => {
+                      const newBoard = performSummon(board, summonOptions.row, c, summonOptions.color, symbol);
+                      setBoard(newBoard);
+                      setKingState(prev => ({
+                        ...prev,
+                        [summonOptions.color]: {
+                          hasSummoned: true,
+                          needsReturn: true,
+                          returnedHome: false,
+                        }
+                      }));
+                      setSummonOptions(null);
+                    }}
+                  />
+                ))}
+                <button onClick={(e) => { e.stopPropagation(); setSummonOptions(null); }}>X</button>
+              </div>
+            ))}
+        </div>
+      )}
+
+
+
 
       {/* Your board rendering stays the same below */}
       <div className="board" style={{ zIndex: 1, position: 'relative' }}>
