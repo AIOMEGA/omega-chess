@@ -337,7 +337,7 @@ function getValidKingMoves(board, row, col, piece, kingState) {
     }
   }
 
-  // ✅ Summoning check
+  // Summoning check
   const homeRow = isWhite ? 7 : 0;
   const enemyRow = isWhite ? 0 : 7;
 
@@ -364,6 +364,13 @@ function performSummon(board, row, col, color, pieceType = '♕') {
   return newBoard;
 }
 
+function performPromotion(board, row, col, fromRow, fromCol, color, piece) {
+  const newBoard = JSON.parse(JSON.stringify(board));
+  newBoard[fromRow][fromCol] = '';
+  newBoard[row][col] = piece;
+  return newBoard;
+}
+
 function App() {
   const [board, setBoard] = useState(initialBoard);
   const [selected, setSelected] = useState(null);
@@ -378,6 +385,11 @@ function App() {
   const [pendingSummonPiece, setPendingSummonPiece] = useState(null);
 
   const [summonOptions, setSummonOptions] = useState(null); // e.g., { row: 0, col: 4, color: 'black' }
+
+  const [promotionOptions, setPromotionOptions] = useState(null); // { row, col, color, fromRow, fromCol }
+
+  const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
+
   
   const pieceImagesMap = {
     white: {
@@ -413,6 +425,13 @@ function App() {
     const color = piece === '♔' ? 'white' : 'black';
     const currentState = kingState[color];  
 
+    // Close open promotion GUIs if open
+    if (promotionOptions) {
+      setPromotionOptions(null);
+      return;
+    }
+
+    // Close open summon GUIs if open
     if (summonOptions) {
       setSummonOptions(null);
       return;
@@ -472,6 +491,33 @@ function App() {
       const newBoard = board.map(r => [...r]);
       const movingPawn = selectedPiece;
     
+      const movedPiece = board[selected.row][selected.col];
+      const isPawn = movedPiece === '♙' || movedPiece === '♟';
+      const targetRow = row;
+
+      const isWhitePromotion = isPawn && movedPiece === '♙' && targetRow === 0;
+      const isBlackPromotion = isPawn && movedPiece === '♟' && targetRow === 7;
+
+      if (selectedPiece === '♔' || selectedPiece === '♚') {
+        setLastKingMove({
+          fromRow: selected.row,
+          fromCol: selected.col,
+          toRow: row,
+          toCol: col,
+        });
+      }      
+
+      if (isWhitePromotion || isBlackPromotion) {
+        setPromotionOptions({
+          row,
+          col,
+          fromRow: selected.row,
+          fromCol: selected.col,
+          color: movedPiece === '♙' ? 'white' : 'black'
+        });
+        return;
+      }
+
       // En passant capture
       if (
         (movingPawn === '♙' || movingPawn === '♟') &&
@@ -516,13 +562,48 @@ function App() {
 
         const isBackHome = row === homeRow;
 
-        // Check if summon GUI should be shown
+        // Perform summon GUI logic on the **new board**
+        const updatedBoard = newBoard;
+
         if (
           row === enemyRow &&
           !kingState[pieceColor].hasSummoned &&
           (!kingState[pieceColor].needsReturn || kingState[pieceColor].returnedHome)
         ) {
-          setSummonOptions({ row, col, color: pieceColor });
+          const potentialCols = [];
+
+          const candidateCols = [-1, 1]
+            .map(offset => col + offset)
+            .filter(c => c >= 0 && c < 8);
+
+          for (const c of candidateCols) {
+            const neighbor = updatedBoard[row][c];
+            const isFriendly = neighbor && isSameTeam(neighbor, pieceColor === 'white' ? '♙' : '♟');
+            if (!isFriendly) {
+              potentialCols.push(c);
+            }
+          }
+
+          // Always include fromCol if it's adjacent and empty (for corner case fix)
+          if (
+            lastKingMove &&
+            lastKingMove.toRow === row &&
+            Math.abs(lastKingMove.fromCol - col) === 1 &&
+            !potentialCols.includes(lastKingMove.fromCol)
+          ) {
+            const fromCol = lastKingMove.fromCol;
+            if (fromCol >= 0 && fromCol < 8) {
+              const pieceAtFromCol = updatedBoard[row][fromCol];
+              const isFriendly = pieceAtFromCol && isSameTeam(pieceAtFromCol, pieceColor === 'white' ? '♙' : '♟');
+              if (!isFriendly) {
+                potentialCols.push(fromCol);
+              }
+            }
+          }
+        
+          if (potentialCols.length > 0) {
+            setSummonOptions({ row, col, color: pieceColor, cols: potentialCols });
+          }
         }
 
         setKingState(prev => ({
@@ -542,12 +623,23 @@ function App() {
     
 
   };
-
   
 
   return (
-    <div style={{ position: 'relative', width: '840px', height: '840px' }}>
-      {/* <svg
+    <div
+      style={{ position: 'relative', width: '840px', height: '840px' }}
+      onClick={() => {
+        if (promotionOptions) {
+          setPromotionOptions(null);
+          setSelected(null); // <== Add this
+        }
+        if (summonOptions) {
+          setSummonOptions(null);
+          setSelected(null); // <== Add this
+        }
+      }}      
+    >  
+      <svg
         width="840"
         height="840"
         style={{
@@ -580,10 +672,10 @@ function App() {
               );
             }
           )}
-      </svg> */}
+      </svg>
 
       {summonOptions && (
-        <div className="summon-ui">
+        <div className="summon-ui" onClick={(e) => e.stopPropagation()}>
           {[summonOptions.col - 1, summonOptions.col + 1]
             .filter(c => {
               const neighborPiece = board[summonOptions.row]?.[c];
@@ -596,7 +688,7 @@ function App() {
                 key={c}
                 className="summon-column"
                 style={{
-                  left: `${c * 105}px`,
+                  left: `${c * 105 + 4}px`,
                   top: `${summonOptions.row * 105 - (summonOptions.color === 'black' ? 315 : 0)}px`,
                 }}
               >
@@ -618,6 +710,7 @@ function App() {
                         }
                       }));
                       setSummonOptions(null);
+                      setLastKingMove(null);
                     }}
                   />
                 ))}
@@ -627,7 +720,48 @@ function App() {
         </div>
       )}
 
+      {promotionOptions && (
+        <div className="summon-ui" onClick={(e) => e.stopPropagation()}>
+          {[promotionOptions.col].map((c) => (
+            <div
+              key={c}
+              className="summon-column"
+              style={{
+                left: `${c * 105 + 4}px`,
+                top: `${promotionOptions.color === 'black' ? promotionOptions.row * 105 - 315 : promotionOptions.row * 105}px`,
+              }}
+            >
+              {(promotionOptions.color === 'white' ? ['♕', '♘', '♖', '♗'] : ['♛', '♞', '♜', '♝']).map((symbol, i) => (
+                <img
+                  key={i}
+                  src={`/src/assets/pieces/${pieceImagesMap[promotionOptions.color][symbol]}`}
+                  alt={symbol}
+                  style={{ width: '80px', height: '80px', margin: '5px', cursor: 'pointer' }}
 
+                  onClick={() => {
+                    const newBoard = performPromotion(
+                      board,
+                      promotionOptions.row,
+                      promotionOptions.col,
+                      promotionOptions.fromRow,
+                      promotionOptions.fromCol,
+                      promotionOptions.color,
+                      symbol
+                    );
+                    setBoard(newBoard);
+                    setPromotionOptions(null);
+                    setSelected(null);
+                  }}
+                />
+              ))}
+              <button onClick={() => {
+                setPromotionOptions(null);
+                setSelected(null); // <== Add this
+              }}>X</button>
+            </div>
+          ))}
+        </div>
+      )}
 
 
       {/* Your board rendering stays the same below */}
