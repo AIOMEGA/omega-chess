@@ -84,3 +84,8 @@ body {
 
 .summon-gui.white { top: calc(row * 105px); }
 .summon-gui.black { bottom: calc((7 - row) * 105px); }
+
+* {
+  user-select: none;
+  -webkit-user-drag: none;
+}
