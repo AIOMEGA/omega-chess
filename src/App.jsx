@@ -662,8 +662,11 @@ function App() {
           else if (piece === '♗' || piece === '♝') validMoves = getValidBishopMoves(board, selected.row, selected.col, piece);
           else if (piece === '♔' || piece === '♚') validMoves = getValidKingMoves(board, selected.row, selected.col, piece, kingState);
 
-          return validMoves.map(([r, c], i) => {
-            const target = board[r][c];
+          return validMoves.map((move, i) => {
+            if (!Array.isArray(move) || typeof move[0] !== 'number' || typeof move[1] !== 'number') return null;
+          
+            const [r, c] = move;
+            const target = board[r]?.[c];
             const isEnemy = target && !isSameTeam(piece, target);
             const startX = selected.col * 105 + 52.5 + 4;
             const startY = selected.row * 105 + 52.5 + 4;
@@ -682,16 +685,16 @@ function App() {
               //   strokeOpacity={0.6}
               // />
 
-                <circle
-                  key={"attack-" + i}
-                  cx={c * 105 + 52.5 + 4}
-                  cy={r * 105 + 52.5 + 4}
-                  r={43}
-                  fill="none"
-                  stroke="black"
-                  strokeWidth={10}
-                  opacity="0.2"
-                />
+              <circle
+                key={"attack-" + i}
+                cx={endX}
+                cy={endY}
+                r={43}
+                fill="none"
+                stroke="black"
+                strokeWidth={10}
+                opacity="0.2"
+              />
               );
             }
             return (
@@ -708,8 +711,8 @@ function App() {
                 
               <circle
                 key={"move-" + i}
-                cx={c * 105 + 52.5 + 4}
-                cy={r * 105 + 52.5 + 4}
+                cx={endX}
+                cy={endY}
                 r={15}
                 fill="black"
                 opacity="0.2"
