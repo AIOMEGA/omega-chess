@@ -390,6 +390,7 @@ function App() {
 
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
 
+  const [turn, setTurn] = useState('white');
   
   const pieceImagesMap = {
     white: {
@@ -446,7 +447,10 @@ function App() {
     // Selecting a piece
     if (!selected) {
       if (piece !== '') {
-        setSelected({ row, col });
+        const isWhitePiece = whitePieces.includes(piece);
+        if ((turn === 'white' && isWhitePiece) || (turn === 'black' && !isWhitePiece)) {
+          setSelected({ row, col });
+        }
       }
       return;
     }
@@ -499,6 +503,14 @@ function App() {
       const isWhitePromotion = isPawn && movedPiece === '♙' && targetRow === 0;
       const isBlackPromotion = isPawn && movedPiece === '♟' && targetRow === 7;
 
+      // Ensure only current player's pieces can move
+      const isWhiteTurn = turn === 'white';
+      const isWhitePiece = whitePieces.includes(selectedPiece);
+      if ((isWhiteTurn && !isWhitePiece) || (!isWhiteTurn && isWhitePiece)) {
+        return;
+      }
+
+
       if (selectedPiece === '♔' || selectedPiece === '♚') {
         setLastKingMove({
           fromRow: selected.row,
@@ -545,14 +557,7 @@ function App() {
       newBoard[selected.row][selected.col] = '';
       setBoard(newBoard);
 
-      // if (
-      //   (selectedPiece === '♔' || selectedPiece === '♚') &&
-      //   row === (selectedPiece === '♔' ? 0 : 7) &&
-      //   !kingState[pieceColor].hasSummoned &&
-      //   (!kingState[pieceColor].needsReturn || kingState[pieceColor].returnedHome)
-      // ) {
-      //   setSummonOptions({ row, col, color: pieceColor });
-      // }
+      setTurn(prev => (prev === 'white' ? 'black' : 'white'));
       
 
       if (selectedPiece === '♔' || selectedPiece === '♚') {
@@ -814,6 +819,7 @@ function App() {
 
       {/* Your board rendering stays the same below */}
       <div className="board" style={{ zIndex: 1, position: 'relative' }}>
+        
         {board.map((rowArr, row) => (
           <div key={row} className="row">
             {rowArr.map((piece, col) => {
