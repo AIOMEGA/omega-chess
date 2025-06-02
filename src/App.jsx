@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './App.css';
+
 
 const BOARD_SIZE = 8;
 
@@ -391,6 +392,56 @@ function App() {
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
 
   const [turn, setTurn] = useState('white');
+
+  const [moveHistory, setMoveHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1); // index of current move
+
+  const moveListRef = useRef(null);
+  useEffect(() => {
+    if (moveListRef.current) {
+      moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+    }
+  }, [historyIndex]);
+
+
+  const undoMove = () => {
+    if (historyIndex < 0) return;
+    const newIndex = historyIndex - 1;
+  
+    if (newIndex >= 0) {
+      const prev = moveHistory[newIndex];
+      setBoard(prev.board);
+      setTurn(prev.turn === 'white' ? 'black' : 'white');
+    } else {
+      // If going before the first move, reset board to initial
+      setBoard(initialBoard.map(r => [...r]));
+      setTurn('white');
+    }
+  
+    setHistoryIndex(newIndex);
+  };
+  
+  
+  const redoMove = () => {
+    if (historyIndex >= moveHistory.length - 1) return;
+    const newIndex = historyIndex + 1;
+    const next = moveHistory[newIndex];
+    setBoard(next.board);
+    setTurn(next.turn === 'white' ? 'black' : 'white');
+    setHistoryIndex(newIndex);
+  };
+
+  const jumpToMove = (index) => {
+    const move = moveHistory[index];
+    if (move) {
+      setBoard(move.board);
+      setTurn(move.turn === 'white' ? 'black' : 'white');
+    } else {
+      setBoard(initialBoard.map(r => [...r]));
+      setTurn('white');
+    }
+    setHistoryIndex(index);
+  };  
   
   const pieceImagesMap = {
     white: {
@@ -556,6 +607,20 @@ function App() {
       newBoard[row][col] = selectedPiece;
       newBoard[selected.row][selected.col] = '';
       setBoard(newBoard);
+
+      const move = {
+        from: { row: selected.row, col: selected.col },
+        to: { row, col },
+        piece: selectedPiece,
+        captured: board[row][col] || null,
+        board: newBoard.map(r => [...r]), // snapshot
+        turn: turn,
+      };
+      
+      const newHistory = moveHistory.slice(0, historyIndex + 1);
+      newHistory.push(move);
+      setMoveHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);      
 
       setTurn(prev => (prev === 'white' ? 'black' : 'white'));
       
@@ -817,57 +882,138 @@ function App() {
       )}
 
 
-      {/* Your board rendering stays the same below */}
-      <div className="board" style={{ zIndex: 1, position: 'relative' }}>
-        
-        {board.map((rowArr, row) => (
-          <div key={row} className="row">
-            {rowArr.map((piece, col) => {
-              const isDark = (row + col) % 2 === 1;
-              const isSelected = selected?.row === row && selected?.col === col;
+      <div style={{ display: 'flex', gap: '16px' }}>
+        {/* Left: Board container */}
+        <div
+          style={{ position: 'relative', width: '840px', height: '840px' }}
+          onClick={() => {
+            if (promotionOptions) {
+              setPromotionOptions(null);
+              setSelected(null);
+            }
+            if (summonOptions) {
+              setSummonOptions(null);
+              setSelected(null);
+            }
+          }}
+        >
+          {/* Your board rendering below */}
+          <div className="board" style={{ zIndex: 1, position: 'relative' }}>
+            {board.map((rowArr, row) => (
+              <div key={row} className="row">
+                {rowArr.map((piece, col) => {
+                  const isDark = (row + col) % 2 === 1;
+                  const isSelected = selected?.row === row && selected?.col === col;
 
-              return (
-                <div
-                  key={col}
-                  className={`square ${isDark ? 'dark' : 'light'} ${isSelected ? 'selected' : ''}`}
-                  onClick={() => handleClick(row, col)}
-                >
-                  <div
-                    className="label"
-                    style={{
-                      position: 'absolute',
-                      top: '4px',
-                      left: '7px',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                      color: isDark ? '#f0d9b5' : '#b58863',
-                    }}>
-                    {col === 0 ? 8 - row : ''}
-                  </div>
-                  <div
-                    className="label"
-                    style={{
-                      position: 'absolute',
-                      bottom: '4px',
-                      right: '10px',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                      color: isDark ? '#f0d9b5' : '#b58863',
-                    }}>
-                    {row === 7 ? String.fromCharCode(97 + col) : ''}
-                  </div>
-                  {piece && (
-                    <img
-                      src={`/src/assets/pieces/${pieceImages[piece]}`}
-                      alt={piece}
-                      style={{ width: '80%', height: '80%' }}
-                    />
-                  )}
-                </div>
-              );
-            })}
+                  return (
+                    <div
+                      key={col}
+                      className={`square ${isDark ? 'dark' : 'light'} ${isSelected ? 'selected' : ''}`}
+                      onClick={() => handleClick(row, col)}
+                    >
+                      <div
+                        className="label"
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          left: '7px',
+                          fontSize: '16px',
+                          fontWeight: 'bold',
+                          color: isDark ? '#f0d9b5' : '#b58863',
+                        }}
+                      >
+                        {col === 0 ? 8 - row : ''}
+                      </div>
+                      <div
+                        className="label"
+                        style={{
+                          position: 'absolute',
+                          bottom: '4px',
+                          right: '10px',
+                          fontSize: '16px',
+                          fontWeight: 'bold',
+                          color: isDark ? '#f0d9b5' : '#b58863',
+                        }}
+                      >
+                        {row === 7 ? String.fromCharCode(97 + col) : ''}
+                      </div>
+                      {piece && (
+                        <img
+                          src={`/src/assets/pieces/${pieceImages[piece]}`}
+                          alt={piece}
+                          style={{ width: '80%', height: '80%' }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
-        ))}
+        </div> {/* End of board container */}
+
+        {/* Right: Sidebar */}
+        <div style={{ width: '200px', color: 'white' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+            <button onClick={undoMove} disabled={historyIndex < 0}>Undo</button>
+            <button onClick={redoMove} disabled={historyIndex >= moveHistory.length - 1}>Redo</button>
+          </div>
+          <div 
+            ref={moveListRef}
+            style={{
+            width: '290px',
+            color: 'white',
+            maxHeight: '500px',
+            overflowY: 'auto',
+            paddingRight: '8px'
+          }}>
+            <ol style={{ paddingLeft: '20px', listStyle: 'none', margin: 0 }}>
+              {Array.from({ length: Math.ceil((historyIndex + 1) / 2) }).map((_, i) => {
+                const whiteMove = moveHistory[i * 2];
+                const blackMove = moveHistory[i * 2 + 1];
+
+                const turnNum = i + 1;
+                const whiteText = whiteMove
+                  ? `W: ${whiteMove.piece} ${String.fromCharCode(97 + whiteMove.from.col)}${8 - whiteMove.from.row}→${String.fromCharCode(97 + whiteMove.to.col)}${8 - whiteMove.to.row}`
+                  : '';
+                const blackText = blackMove
+                  ? `B: ${blackMove.piece} ${String.fromCharCode(97 + blackMove.from.col)}${8 - blackMove.from.row}→${String.fromCharCode(97 + blackMove.to.col)}${8 - blackMove.to.row}`
+                  : '';
+
+                const isWhiteBold = historyIndex === i * 2;
+                const isBlackBold = historyIndex === i * 2 + 1;
+
+                return (
+                  <li key={i} style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span
+                      onClick={() => jumpToMove(i * 2)}
+                      style={{
+                        fontWeight: isWhiteBold ? 'bold' : 'normal',
+                        minWidth: '140px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {turnNum}. {whiteText}
+                    </span>
+                    <span
+                      onClick={() => jumpToMove(i * 2 + 1)}
+                      style={{
+                        marginLeft: '16px',
+                        fontWeight: isBlackBold ? 'bold' : 'normal',
+                        minWidth: '120px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {blackText}
+                    </span>
+                  </li>
+
+                );
+              })}
+            </ol>
+
+          </div>
+        </div>
       </div>
     </div>
     
