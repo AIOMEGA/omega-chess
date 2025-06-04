@@ -412,15 +412,21 @@ function App() {
       const prev = moveHistory[newIndex];
       setBoard(prev.board);
       setTurn(prev.turn === 'white' ? 'black' : 'white');
+      if (prev.kingState) {
+        setKingState(JSON.parse(JSON.stringify(prev.kingState)));
+      }
     } else {
-      // If going before the first move, reset board to initial
+      // If going before the first move, reset everything
       setBoard(initialBoard.map(r => [...r]));
       setTurn('white');
+      setKingState({
+        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+      });
     }
   
     setHistoryIndex(newIndex);
   };
-  
   
   const redoMove = () => {
     if (historyIndex >= moveHistory.length - 1) return;
@@ -428,6 +434,9 @@ function App() {
     const next = moveHistory[newIndex];
     setBoard(next.board);
     setTurn(next.turn === 'white' ? 'black' : 'white');
+    if (next.kingState) {
+      setKingState(JSON.parse(JSON.stringify(next.kingState)));
+    }
     setHistoryIndex(newIndex);
   };
 
@@ -436,9 +445,16 @@ function App() {
     if (move) {
       setBoard(move.board);
       setTurn(move.turn === 'white' ? 'black' : 'white');
+      if (move.kingState) {
+        setKingState(JSON.parse(JSON.stringify(move.kingState)));
+      }
     } else {
       setBoard(initialBoard.map(r => [...r]));
       setTurn('white');
+      setKingState({
+        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+      });
     }
     setHistoryIndex(index);
   };  
@@ -485,9 +501,28 @@ function App() {
 
     // Close open summon GUIs if open
     if (summonOptions) {
+      // Summon was canceled by clicking the board
+      const move = {
+        from: lastKingMove
+          ? { row: lastKingMove.fromRow, col: lastKingMove.fromCol }
+          : { row: summonOptions.row, col: summonOptions.col },
+        to: { row: summonOptions.row, col: summonOptions.col },
+        piece: summonOptions.color === 'white' ? '♔' : '♚',
+        board: board.map(r => [...r]),
+        turn: turn,
+      };
+
+      const newHistory = moveHistory.slice(0, historyIndex + 1);
+      newHistory.push(move);
+      setMoveHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+
       setSummonOptions(null);
-      return;
-    }    
+      setLastKingMove(null);
+      setTurn(prev => (prev === 'white' ? 'black' : 'white'));
+      setSelected(null);
+      return; // Exit early to prevent selection re-trigger
+    }
 
     // Clicked selected piece again? Deselect
     if (selected && selected.row === row && selected.col === col) {
@@ -505,6 +540,8 @@ function App() {
       }
       return;
     }
+
+    console.log('kingState at start of click:', kingState);
 
     const selectedPiece = board[selected.row][selected.col];
     const targetPiece = board[row][col];
@@ -608,21 +645,35 @@ function App() {
       newBoard[selected.row][selected.col] = '';
       setBoard(newBoard);
 
-      const move = {
-        from: { row: selected.row, col: selected.col },
-        to: { row, col },
-        piece: selectedPiece,
-        captured: board[row][col] || null,
-        board: newBoard.map(r => [...r]), // snapshot
-        turn: turn,
-      };
-      
-      const newHistory = moveHistory.slice(0, historyIndex + 1);
-      newHistory.push(move);
-      setMoveHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);      
+      const isKing = selectedPiece === '♔' || selectedPiece === '♚';
+      const color = selectedPiece === '♔' ? 'white' : 'black';
+      const reachedBackRank = (isKing && (
+        (turn === 'white' && row === 0) || 
+        (turn === 'black' && row === 7))
+      );
+      const shouldWaitForSummon = 
+      isKing && 
+      reachedBackRank &&
+      !kingState[color].hasSummoned &&
+      (!kingState[color].needsReturn || kingState[color].returnedHome);
 
-      setTurn(prev => (prev === 'white' ? 'black' : 'white'));
+      if (!shouldWaitForSummon) {
+        const move = {
+          from: { row: selected.row, col: selected.col },
+          to: { row, col },
+          piece: selectedPiece,
+          captured: board[row][col] || null,
+          board: newBoard.map(r => [...r]),
+          turn: turn,
+          kingState: JSON.parse(JSON.stringify(kingState)),
+        };
+
+        const newHistory = moveHistory.slice(0, historyIndex + 1);
+        newHistory.push(move);
+        setMoveHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+        setTurn(prev => (prev === 'white' ? 'black' : 'white'));
+      }
       
 
       if (selectedPiece === '♔' || selectedPiece === '♚') {
@@ -818,21 +869,74 @@ function App() {
                     style={{ width: '80px', height: '80px', margin: '5px', cursor: 'pointer' }}
                     onClick={() => {
                       const newBoard = performSummon(board, summonOptions.row, c, summonOptions.color, symbol);
-                      setBoard(newBoard);
-                      setKingState(prev => ({
-                        ...prev,
+
+                      const newKingState = {
+                        ...kingState,
                         [summonOptions.color]: {
                           hasSummoned: true,
                           needsReturn: true,
                           returnedHome: false,
                         }
-                      }));
+                      };
+                      setKingState(newKingState);
+
+                      // then snapshot the move after updating
+
+                      const move = {
+                        from: lastKingMove
+                          ? { row: lastKingMove.fromRow, col: lastKingMove.fromCol }
+                          : { row: summonOptions.row, col: summonOptions.col },
+                        to: { row: summonOptions.row, col: summonOptions.col },
+                        piece: summonOptions.color === 'white' ? '♔' : '♚',
+                        summon: {
+                          piece: symbol,
+                          to: { row: summonOptions.row, col: c }
+                        },
+                        board: newBoard.map(r => [...r]),
+                        turn: turn,
+                        kingState: JSON.parse(JSON.stringify(newKingState)),
+                      };
+
+                      // THEN update game state
+                      
+                      const newHistory = moveHistory.slice(0, historyIndex + 1);
+                      newHistory.push(move);
+                      setMoveHistory(newHistory);
+                      setHistoryIndex(newHistory.length - 1);
+
+                      setBoard(newBoard);
+                      setTurn(prev => (prev === 'white' ? 'black' : 'white'));
                       setSummonOptions(null);
                       setLastKingMove(null);
+                      setSelected(null);                 
+
                     }}
                   />
                 ))}
-                <button onClick={(e) => { e.stopPropagation(); setSummonOptions(null); }}>X</button>
+                <button onClick={(e) => {
+                  e.stopPropagation();
+
+                  const move = {
+                    from: lastKingMove
+                      ? { row: lastKingMove.fromRow, col: lastKingMove.fromCol }
+                      : { row: summonOptions.row, col: summonOptions.col },
+                    to: { row: summonOptions.row, col: summonOptions.col },
+                    piece: summonOptions.color === 'white' ? '♔' : '♚',
+                    board: board.map(r => [...r]),
+                    turn: turn,
+                    kingState: JSON.parse(JSON.stringify(kingState)),
+                  };
+
+                  const newHistory = moveHistory.slice(0, historyIndex + 1);
+                  newHistory.push(move);
+                  setMoveHistory(newHistory);
+                  setHistoryIndex(newHistory.length - 1);
+
+                  setSummonOptions(null);
+                  setLastKingMove(null);
+                  setTurn(prev => (prev === 'white' ? 'black' : 'white'));
+                  setSelected(null);
+                }}>X</button>
               </div>
             ))}
         </div>
@@ -866,9 +970,25 @@ function App() {
                       promotionOptions.color,
                       symbol
                     );
+
+                    const move = {
+                      from: { row: promotionOptions.fromRow, col: promotionOptions.fromCol },
+                      to: { row: promotionOptions.row, col: promotionOptions.col },
+                      piece: promotionOptions.color === 'white' ? '♙' : '♟',
+                      promotion: symbol,
+                      board: newBoard.map(r => [...r]),
+                      turn: turn,
+                    };
+
+                    const newHistory = moveHistory.slice(0, historyIndex + 1);
+                    newHistory.push(move);
+                    setMoveHistory(newHistory);
+                    setHistoryIndex(newHistory.length - 1);
+
                     setBoard(newBoard);
                     setPromotionOptions(null);
                     setSelected(null);
+                    setTurn(prev => (prev === 'white' ? 'black' : 'white'));
                   }}
                 />
               ))}
@@ -961,7 +1081,7 @@ function App() {
           <div 
             ref={moveListRef}
             style={{
-            width: '290px',
+            width: '330px',
             color: 'white',
             maxHeight: '500px',
             overflowY: 'auto',
@@ -973,12 +1093,43 @@ function App() {
                 const blackMove = moveHistory[i * 2 + 1];
 
                 const turnNum = i + 1;
-                const whiteText = whiteMove
-                  ? `W: ${whiteMove.piece} ${String.fromCharCode(97 + whiteMove.from.col)}${8 - whiteMove.from.row}→${String.fromCharCode(97 + whiteMove.to.col)}${8 - whiteMove.to.row}`
-                  : '';
-                const blackText = blackMove
-                  ? `B: ${blackMove.piece} ${String.fromCharCode(97 + blackMove.from.col)}${8 - blackMove.from.row}→${String.fromCharCode(97 + blackMove.to.col)}${8 - blackMove.to.row}`
-                  : '';
+                // const whiteText = whiteMove
+                //   ? `W: ${whiteMove.piece} ${String.fromCharCode(97 + whiteMove.from.col)}${8 - whiteMove.from.row}→${String.fromCharCode(97 + whiteMove.to.col)}${8 - whiteMove.to.row}`
+                //   : '';
+                // const blackText = blackMove
+                //   ? `B: ${blackMove.piece} ${String.fromCharCode(97 + blackMove.from.col)}${8 - blackMove.from.row}→${String.fromCharCode(97 + blackMove.to.col)}${8 - blackMove.to.row}`
+                //   : '';
+
+                let whiteText = '';
+                if (whiteMove) {
+                  const from = `${String.fromCharCode(97 + whiteMove.from.col)}${8 - whiteMove.from.row}`;
+                  const to = `${String.fromCharCode(97 + whiteMove.to.col)}${8 - whiteMove.to.row}`;
+                  whiteText = `W: ${whiteMove.piece} ${from}→${to}`;
+
+                  if (whiteMove.promotion) {
+                    whiteText += `=${whiteMove.promotion}`;
+                  }
+
+                  if (whiteMove.summon) {
+                    const summonTo = `${String.fromCharCode(97 + whiteMove.summon.to.col)}${8 - whiteMove.summon.to.row}`;
+                    whiteText += `+${whiteMove.summon.piece}${summonTo}`;
+                  }
+                }
+                let blackText = '';
+                if (blackMove) {
+                  const from = `${String.fromCharCode(97 + blackMove.from.col)}${8 - blackMove.from.row}`;
+                  const to = `${String.fromCharCode(97 + blackMove.to.col)}${8 - blackMove.to.row}`;
+                  blackText = `B: ${blackMove.piece} ${from}→${to}`;
+
+                  if (blackMove.promotion) {
+                    blackText += `=${blackMove.promotion}`;
+                  }
+
+                  if (blackMove.summon) {
+                    const summonTo = `${String.fromCharCode(97 + blackMove.summon.to.col)}${8 - blackMove.summon.to.row}`;
+                    blackText += `+${blackMove.summon.piece}${summonTo}`;
+                  }
+                }
 
                 const isWhiteBold = historyIndex === i * 2;
                 const isBlackBold = historyIndex === i * 2 + 1;
