@@ -5,6 +5,7 @@ import './App.css';
 const BOARD_SIZE = 8;
 
 // Unicode pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
+// Hard coded board preset positions
 const initialBoard = [
   ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'],
   ['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟'],
@@ -16,6 +17,7 @@ const initialBoard = [
   ['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖'],
 ];
 
+// Used to set each unicode piece to a svg image I got from https://github.com/lichess-org/lila/tree/master/public/piece
 const pieceImages = {
   '♙': 'wP.svg',
   '♟': 'bP.svg',
@@ -148,12 +150,6 @@ function getValidRookMoves(board, row, col, piece) {
   return validMoves;
 }
 
-function getSquareCenter(row, col, squareSize = 105) {
-  const x = col * squareSize + squareSize / 2;
-  const y = row * squareSize + squareSize / 2;
-  return { x, y };
-}
-
 function getValidQueenMoves(board, row, col, piece) {
   const isWhite = piece === '♕';
   const isBlack = piece === '♛';
@@ -204,8 +200,6 @@ function getValidQueenMoves(board, row, col, piece) {
     return true;
   }
   
-  
-
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       if (r === row && c === col) continue;
@@ -308,6 +302,51 @@ function getValidBishopMoves(board, row, col, piece) {
   return validMoves;
 }
 
+function isSquareAttacked(board, row, col, attackerIsWhite) {
+  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
+  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
+  const isEnemy = (piece) =>
+    attackerIsWhite ? whitePieces.includes(piece) : blackPieces.includes(piece);
+
+  // Helper to reuse your move checkers (just reuse your logic here!)
+  const getAllEnemyMoves = (r, c, piece) => {
+    if (piece === '♙' || piece === '♟') return getValidPawnMoves(board, r, c, piece);
+    if (piece === '♘' || piece === '♞') return getValidKnightMoves(board, r, c, piece);
+    if (piece === '♗' || piece === '♝') return getValidBishopMoves(board, r, c, piece);
+    if (piece === '♖' || piece === '♜') return getValidRookMoves(board, r, c, piece);
+    if (piece === '♕' || piece === '♛') return getValidQueenMoves(board, r, c, piece);
+    if (piece === '♔' || piece === '♚') return [];
+    return [];
+  };
+  
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (!isEnemy(piece)) continue;
+
+      const moves = getAllEnemyMoves(r, c, piece);
+      for (const [mr, mc] of moves) {
+        if (mr === row && mc === col) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function findKingPosition(board, isWhite) {
+  const kingSymbol = isWhite ? '♚' : '♔'; // enemy king
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (board[r][c] === kingSymbol) {
+        return { row: r, col: c };
+      }
+    }
+  }
+  return null;
+}
+
 function getValidKingMoves(board, row, col, piece, kingState) {
   const isWhite = piece === '♔';
   const isBlack = piece === '♚';
@@ -334,8 +373,24 @@ function getValidKingMoves(board, row, col, piece, kingState) {
 
     const target = board[r][c];
     if (target === '' || isEnemy(target)) {
-      validMoves.push([r, c]);
+      // Simulate the move
+      const simulatedBoard = board.map(row => [...row]);
+      simulatedBoard[row][col] = ''; // Clear old king position
+      simulatedBoard[r][c] = piece; // Move king to new position
+    
+      const wouldBeInCheck = isSquareAttacked(simulatedBoard, r, c, !isWhite);
+
+      const enemyKingPos = findKingPosition(board, isWhite);
+      const tooCloseToEnemyKing =
+        enemyKingPos &&
+        Math.abs(enemyKingPos.row - r) <= 1 &&
+        Math.abs(enemyKingPos.col - c) <= 1;
+
+      if (!wouldBeInCheck && !tooCloseToEnemyKing) {
+        validMoves.push([r, c]);
+      }
     }
+    
   }
 
   // Summoning check
