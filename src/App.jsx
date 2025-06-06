@@ -470,6 +470,7 @@ function App() {
       if (prev.kingState) {
         setKingState(JSON.parse(JSON.stringify(prev.kingState)));
       }
+      setEnPassantTarget(prev.enPassantTarget || null);
     } else {
       // If going before the first move, reset everything
       setBoard(initialBoard.map(r => [...r]));
@@ -478,6 +479,7 @@ function App() {
         white: { hasSummoned: false, needsReturn: false, returnedHome: false },
         black: { hasSummoned: false, needsReturn: false, returnedHome: false },
       });
+      setEnPassantTarget(null);
     }
   
     setHistoryIndex(newIndex);
@@ -492,6 +494,7 @@ function App() {
     if (next.kingState) {
       setKingState(JSON.parse(JSON.stringify(next.kingState)));
     }
+    setEnPassantTarget(next.enPassantTarget || null);
     setHistoryIndex(newIndex);
   };
 
@@ -503,6 +506,7 @@ function App() {
       if (move.kingState) {
         setKingState(JSON.parse(JSON.stringify(move.kingState)));
       }
+      setEnPassantTarget(move.enPassantTarget || null);
     } else {
       setBoard(initialBoard.map(r => [...r]));
       setTurn('white');
@@ -510,6 +514,7 @@ function App() {
         white: { hasSummoned: false, needsReturn: false, returnedHome: false },
         black: { hasSummoned: false, needsReturn: false, returnedHome: false },
       });
+      setEnPassantTarget(null);
     }
     setHistoryIndex(index);
   };  
@@ -596,8 +601,6 @@ function App() {
       return;
     }
 
-    console.log('kingState at start of click:', kingState);
-
     const selectedPiece = board[selected.row][selected.col];
     const targetPiece = board[row][col];
 
@@ -671,6 +674,7 @@ function App() {
           fromCol: selected.col,
           color: movedPiece === '♙' ? 'white' : 'black'
         });
+        setEnPassantTarget(null);
         return;
       }
 
@@ -687,15 +691,12 @@ function App() {
     
       // Set new en passant target
       const diff = Math.abs(row - selected.row);
+      let newEnPassantTarget = null;
       if ((movingPawn === '♙' || movingPawn === '♟') && diff === 2) {
-        setEnPassantTarget({
-          row: (row + selected.row) / 2,
-          col: col
-        });
-      } else {
-        setEnPassantTarget(null);
+        newEnPassantTarget = { row: (row + selected.row) / 2, col };
       }
-    
+      setEnPassantTarget(newEnPassantTarget);
+
       newBoard[row][col] = selectedPiece;
       newBoard[selected.row][selected.col] = '';
       setBoard(newBoard);
@@ -721,6 +722,7 @@ function App() {
           board: newBoard.map(r => [...r]),
           turn: turn,
           kingState: JSON.parse(JSON.stringify(kingState)),
+          enPassantTarget: newEnPassantTarget,
         };
 
         const newHistory = moveHistory.slice(0, historyIndex + 1);
@@ -950,6 +952,7 @@ function App() {
                         board: newBoard.map(r => [...r]),
                         turn: turn,
                         kingState: JSON.parse(JSON.stringify(newKingState)),
+                        enPassantTarget,
                       };
 
                       // THEN update game state
@@ -980,6 +983,7 @@ function App() {
                     board: board.map(r => [...r]),
                     turn: turn,
                     kingState: JSON.parse(JSON.stringify(kingState)),
+                    enPassantTarget,
                   };
 
                   const newHistory = moveHistory.slice(0, historyIndex + 1);
@@ -1033,6 +1037,7 @@ function App() {
                       promotion: symbol,
                       board: newBoard.map(r => [...r]),
                       turn: turn,
+                      enPassantTarget,
                     };
 
                     const newHistory = moveHistory.slice(0, historyIndex + 1);
