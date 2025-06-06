@@ -679,7 +679,78 @@ function App() {
   const [, setHalfmoveClock] = useState(0); // half-move counter for fifty-move rule
   // Track occurrences of board positions for repetition detection
   const positionCountsRef = useRef({});
+  // Persistent board annotations (circles, arrows, lines)
+  const [annotations, setAnnotations] = useState([]);
+  // Ref to board container for coordinate calculations
+  const boardRef = useRef(null);
+  // Ref tracking right-click drag state
+  const rightDragRef = useRef({ dragging: false });
 
+  const squareSize = 105;
+  const boardOffset = 4; // matches board border
+
+  const getSquareFromEvent = (e) => {
+    const rect = boardRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left - boardOffset;
+    const y = e.clientY - rect.top - boardOffset;
+    const col = Math.floor(x / squareSize);
+    const row = Math.floor(y / squareSize);
+    if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+    return { row, col };
+  };
+
+  const toggleAnnotation = (ann) => {
+    setAnnotations((prev) => {
+      const match = prev.findIndex((a) => {
+        if (a.type !== ann.type) return false;
+        if (ann.type === 'circle') {
+          return a.row === ann.row && a.col === ann.col;
+        }
+        return (
+          a.from.row === ann.from.row &&
+          a.from.col === ann.from.col &&
+          a.to.row === ann.to.row &&
+          a.to.col === ann.to.col
+        );
+      });
+      if (match !== -1) {
+        const copy = prev.slice();
+        copy.splice(match, 1);
+        return copy;
+      }
+      return [...prev, ann];
+    });
+  };
+
+  const handleBoardMouseDown = (e) => {
+    if (e.button !== 2) return;
+    e.preventDefault();
+    const sq = getSquareFromEvent(e);
+    if (!sq) return;
+    rightDragRef.current = { dragging: true, start: sq, shift: e.shiftKey };
+  };
+
+  const handleBoardMouseUp = (e) => {
+    if (e.button !== 2) return;
+    e.preventDefault();
+    const data = rightDragRef.current;
+    if (!data.dragging) return;
+    const sq = getSquareFromEvent(e);
+    if (!sq) {
+      rightDragRef.current.dragging = false;
+      return;
+    }
+    if (data.start.row === sq.row && data.start.col === sq.col) {
+      toggleAnnotation({ type: 'circle', row: sq.row, col: sq.col });
+    } else if (data.shift) {
+      toggleAnnotation({ type: 'line', from: data.start, to: sq });
+    } else {
+      toggleAnnotation({ type: 'arrow', from: data.start, to: sq });
+    }
+    rightDragRef.current.dragging = false;
+  };
+  
+  
   useEffect(() => {
     const key = boardKey(
       initialBoard,
@@ -1263,6 +1334,10 @@ function App() {
       )}
       <div
         style={{ position: 'relative', width: '840px', height: '840px' }}
+        ref={boardRef}
+        onMouseDown={handleBoardMouseDown}
+        onMouseUp={handleBoardMouseUp}
+        onContextMenu={(e) => e.preventDefault()}
         onClick={() => {
         if (promotionOptions) {
           setPromotionOptions(null);
@@ -1272,8 +1347,69 @@ function App() {
           setSummonOptions(null);
           setSelected(null); // <== Add this
         }
-      }}      
-      >  
+      }}
+      >
+      <svg
+        width="840"
+        height="840"
+        className="annotation-overlay"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          zIndex: 1,
+          pointerEvents: 'none',
+        }}
+      >
+        <defs>
+          <marker
+            id="ann-arrow"
+            markerWidth="10"
+            markerHeight="10"
+            refX="5"
+            refY="5"
+            orient="auto"
+            markerUnits="strokeWidth"
+          >
+            <path d="M0,0 L10,5 L0,10 Z" fill="red" />
+          </marker>
+        </defs>
+        {annotations.map((a, i) => {
+          if (a.type === 'circle') {
+            const cx = a.col * squareSize + squareSize / 2 + boardOffset;
+            const cy = a.row * squareSize + squareSize / 2 + boardOffset;
+            return (
+              <circle
+                key={i}
+                cx={cx}
+                cy={cy}
+                r={40}
+                fill="none"
+                stroke="red"
+                strokeWidth={6}
+                opacity="0.8"
+              />
+            );
+          }
+          const x1 = a.from.col * squareSize + squareSize / 2 + boardOffset;
+          const y1 = a.from.row * squareSize + squareSize / 2 + boardOffset;
+          const x2 = a.to.col * squareSize + squareSize / 2 + boardOffset;
+          const y2 = a.to.row * squareSize + squareSize / 2 + boardOffset;
+          return (
+            <line
+              key={i}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke="red"
+              strokeWidth={6}
+              markerEnd={a.type === 'arrow' ? 'url(#ann-arrow)' : undefined}
+              opacity="0.8"
+            />
+          );
+        })}
+      </svg>
       <svg
         width="840"
         height="840"
