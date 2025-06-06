@@ -387,13 +387,26 @@ function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget
       continue;
     }
     const [r, c] = move;
-    const newBoard = simulateMove(board, fromRow, fromCol, r, c, piece, enPassantTarget);
+    let newBoard;
+    if ((piece === '♔' || piece === '♚') && Math.abs(c - fromCol) === 2 && r === fromRow) {
+      const isWhite = piece === '♔';
+      const kingSide = c > fromCol;
+      const rookFromCol = kingSide ? 7 : 0;
+      const rookToCol = kingSide ? c - 1 : c + 1;
+      newBoard = board.map(row => [...row]);
+      newBoard[fromRow][fromCol] = '';
+      newBoard[r][c] = piece;
+      newBoard[fromRow][rookFromCol] = '';
+      newBoard[fromRow][rookToCol] = isWhite ? '♖' : '♜';
+    } else {
+      newBoard = simulateMove(board, fromRow, fromCol, r, c, piece, enPassantTarget);
+    }
     if (!isKingInCheck(newBoard, color)) legal.push(move);
   }
   return legal;
 }
 
-function hasAnyLegalMoves(board, color, kingState, enPassantTarget) {
+function hasAnyLegalMoves(board, color, kingState, enPassantTarget, castlingRights) {
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const piece = board[r][c];
@@ -412,7 +425,7 @@ function hasAnyLegalMoves(board, color, kingState, enPassantTarget) {
       else if (piece === '♗' || piece === '♝')
         moves = getValidBishopMoves(board, r, c, piece);
       else if (piece === '♔' || piece === '♚')
-        moves = getValidKingMoves(board, r, c, piece, kingState[color]);
+        moves = getValidKingMoves(board, r, c, piece, kingState[color], castlingRights);
 
       const legal = filterLegalMoves(moves, board, r, c, piece, enPassantTarget);
       if (legal.length > 0) return true;
@@ -421,7 +434,7 @@ function hasAnyLegalMoves(board, color, kingState, enPassantTarget) {
   return false;
 }
 
-function getValidKingMoves(board, row, col, piece, kingState) {
+function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
   const isWhite = piece === '♔';
   const isBlack = piece === '♚';
 
@@ -484,6 +497,39 @@ function getValidKingMoves(board, row, col, piece, kingState) {
     }
   }
 
+  // --- Castling ---
+  const color = isWhite ? 'white' : 'black';
+  const rights = castlingRights?.[color];
+  const homeRow = isWhite ? 7 : 0;
+
+  // Ensure king is on its original square
+  if (row === homeRow && col === 4 && rights) {
+    // Kingside
+    if (
+      rights.kingSide &&
+      board[homeRow][5] === '' &&
+      board[homeRow][6] === '' &&
+      !isSquareAttacked(board, homeRow, 4, !isWhite) &&
+      !isSquareAttacked(board, homeRow, 5, !isWhite) &&
+      !isSquareAttacked(board, homeRow, 6, !isWhite)
+    ) {
+      validMoves.push([homeRow, 6]);
+    }
+
+    // Queenside
+    if (
+      rights.queenSide &&
+      board[homeRow][3] === '' &&
+      board[homeRow][2] === '' &&
+      board[homeRow][1] === '' &&
+      !isSquareAttacked(board, homeRow, 4, !isWhite) &&
+      !isSquareAttacked(board, homeRow, 3, !isWhite) &&
+      !isSquareAttacked(board, homeRow, 2, !isWhite)
+    ) {
+      validMoves.push([homeRow, 2]);
+    }
+  }
+
   return validMoves;
 }
 
@@ -514,6 +560,11 @@ function App() {
 
   const [promotionOptions, setPromotionOptions] = useState(null); // { row, col, color, fromRow, fromCol }
 
+  const [castlingRights, setCastlingRights] = useState({
+    white: { kingSide: true, queenSide: true },
+    black: { kingSide: true, queenSide: true },
+  });
+
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
 
   const [turn, setTurn] = useState('white');
@@ -535,7 +586,7 @@ function App() {
   useEffect(() => {
     const inCheck = isKingInCheck(board, turn);
     if (inCheck) {
-      const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget);
+      const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget, castlingRights);
       if (hasMoves) {
         setStatusMessage('');
         // setStatusMessage(`${turn} is in check`);
@@ -559,6 +610,9 @@ function App() {
       if (prev.kingState) {
         setKingState(JSON.parse(JSON.stringify(prev.kingState)));
       }
+      if (prev.castlingRights) {
+        setCastlingRights(JSON.parse(JSON.stringify(prev.castlingRights)));
+      }
       setEnPassantTarget(prev.enPassantTarget || null);
     } else {
       // If going before the first move, reset everything
@@ -569,6 +623,10 @@ function App() {
         black: { hasSummoned: false, needsReturn: false, returnedHome: false },
       });
       setEnPassantTarget(null);
+      setCastlingRights({
+        white: { kingSide: true, queenSide: true },
+        black: { kingSide: true, queenSide: true },
+      });
     }
   
     setHistoryIndex(newIndex);
@@ -583,6 +641,9 @@ function App() {
     if (next.kingState) {
       setKingState(JSON.parse(JSON.stringify(next.kingState)));
     }
+    if (next.castlingRights) {
+      setCastlingRights(JSON.parse(JSON.stringify(next.castlingRights)));
+    }
     setEnPassantTarget(next.enPassantTarget || null);
     setHistoryIndex(newIndex);
   };
@@ -595,6 +656,9 @@ function App() {
       if (move.kingState) {
         setKingState(JSON.parse(JSON.stringify(move.kingState)));
       }
+      if (move.castlingRights) {
+        setCastlingRights(JSON.parse(JSON.stringify(move.castlingRights)));
+      }
       setEnPassantTarget(move.enPassantTarget || null);
     } else {
       setBoard(initialBoard.map(r => [...r]));
@@ -604,6 +668,10 @@ function App() {
         black: { hasSummoned: false, needsReturn: false, returnedHome: false },
       });
       setEnPassantTarget(null);
+      setCastlingRights({
+        white: { kingSide: true, queenSide: true },
+        black: { kingSide: true, queenSide: true },
+      });
     }
     setHistoryIndex(index);
   };  
@@ -658,6 +726,7 @@ function App() {
         piece: summonOptions.color === 'white' ? '♔' : '♚',
         board: board.map(r => [...r]),
         turn: turn,
+        castlingRights: JSON.parse(JSON.stringify(castlingRights)),
       };
 
       const newHistory = moveHistory.slice(0, historyIndex + 1);
@@ -719,7 +788,7 @@ function App() {
       validMoves = getValidBishopMoves(board, selected.row, selected.col, selectedPiece);
     }
     if (selectedPiece === '♔' || selectedPiece === '♚') {
-      validMoves = getValidKingMoves(board, selected.row, selected.col, selectedPiece, kingState);
+      validMoves = getValidKingMoves(board, selected.row, selected.col, selectedPiece, kingState, castlingRights);
     }
     validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, selectedPiece, enPassantTarget);
 
@@ -736,6 +805,47 @@ function App() {
 
       const isWhitePromotion = isPawn && movedPiece === '♙' && targetRow === 0;
       const isBlackPromotion = isPawn && movedPiece === '♟' && targetRow === 7;
+
+      // Castling move
+      if ((selectedPiece === '♔' || selectedPiece === '♚') && Math.abs(col - selected.col) === 2 && row === selected.row) {
+        const isWhite = selectedPiece === '♔';
+        const kingSide = col > selected.col;
+        const rookFromCol = kingSide ? 7 : 0;
+        const rookToCol = kingSide ? col - 1 : col + 1;
+
+        newBoard[row][col] = selectedPiece;
+        newBoard[selected.row][selected.col] = '';
+        newBoard[row][rookFromCol] = '';
+        newBoard[row][rookToCol] = isWhite ? '♖' : '♜';
+
+        const updatedRights = {
+          ...castlingRights,
+          [isWhite ? 'white' : 'black']: { kingSide: false, queenSide: false },
+        };
+        setCastlingRights(updatedRights);
+        setEnPassantTarget(null);
+        setBoard(newBoard);
+
+        const move = {
+          from: { row: selected.row, col: selected.col },
+          to: { row, col },
+          piece: selectedPiece,
+          castle: kingSide ? 'O-O' : 'O-O-O',
+          board: newBoard.map(r => [...r]),
+          turn: turn,
+          kingState: JSON.parse(JSON.stringify(kingState)),
+          enPassantTarget: null,
+          castlingRights: JSON.parse(JSON.stringify(updatedRights)),
+        };
+
+        const newHistory = moveHistory.slice(0, historyIndex + 1);
+        newHistory.push(move);
+        setMoveHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+        setTurn(prev => (prev === 'white' ? 'black' : 'white'));
+        setSelected(null);
+        return;
+      }
 
       // Ensure only current player's pieces can move
       const isWhiteTurn = turn === 'white';
@@ -787,6 +897,32 @@ function App() {
 
       newBoard[row][col] = selectedPiece;
       newBoard[selected.row][selected.col] = '';
+
+      const updatedRights = { ...castlingRights };
+      if (selectedPiece === '♔') {
+        updatedRights.white.kingSide = false;
+        updatedRights.white.queenSide = false;
+      } else if (selectedPiece === '♚') {
+        updatedRights.black.kingSide = false;
+        updatedRights.black.queenSide = false;
+      } else if (selectedPiece === '♖' && selected.row === 7 && selected.col === 0) {
+        updatedRights.white.queenSide = false;
+      } else if (selectedPiece === '♖' && selected.row === 7 && selected.col === 7) {
+        updatedRights.white.kingSide = false;
+      } else if (selectedPiece === '♜' && selected.row === 0 && selected.col === 0) {
+        updatedRights.black.queenSide = false;
+      } else if (selectedPiece === '♜' && selected.row === 0 && selected.col === 7) {
+        updatedRights.black.kingSide = false;
+      }
+      if (targetPiece === '♖') {
+        if (row === 7 && col === 0) updatedRights.white.queenSide = false;
+        if (row === 7 && col === 7) updatedRights.white.kingSide = false;
+      } else if (targetPiece === '♜') {
+        if (row === 0 && col === 0) updatedRights.black.queenSide = false;
+        if (row === 0 && col === 7) updatedRights.black.kingSide = false;
+      }
+      setCastlingRights(updatedRights);
+
       setBoard(newBoard);
 
       const isKing = selectedPiece === '♔' || selectedPiece === '♚';
@@ -811,6 +947,7 @@ function App() {
           turn: turn,
           kingState: JSON.parse(JSON.stringify(kingState)),
           enPassantTarget: newEnPassantTarget,
+          castlingRights: JSON.parse(JSON.stringify(updatedRights)),
         };
 
         const newHistory = moveHistory.slice(0, historyIndex + 1);
@@ -926,7 +1063,7 @@ function App() {
           else if (piece === '♕' || piece === '♛') validMoves = getValidQueenMoves(board, selected.row, selected.col, piece);
           else if (piece === '♘' || piece === '♞') validMoves = getValidKnightMoves(board, selected.row, selected.col, piece);
           else if (piece === '♗' || piece === '♝') validMoves = getValidBishopMoves(board, selected.row, selected.col, piece);
-          else if (piece === '♔' || piece === '♚') validMoves = getValidKingMoves(board, selected.row, selected.col, piece, kingState);
+          else if (piece === '♔' || piece === '♚') validMoves = getValidKingMoves(board, selected.row, selected.col, piece, kingState, castlingRights);
 
           validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, piece, enPassantTarget);
 
@@ -1041,6 +1178,7 @@ function App() {
                         turn: turn,
                         kingState: JSON.parse(JSON.stringify(newKingState)),
                         enPassantTarget,
+                        castlingRights: JSON.parse(JSON.stringify(castlingRights)),
                       };
 
                       // THEN update game state
@@ -1072,6 +1210,7 @@ function App() {
                     turn: turn,
                     kingState: JSON.parse(JSON.stringify(kingState)),
                     enPassantTarget,
+                    castlingRights: JSON.parse(JSON.stringify(castlingRights)),
                   };
 
                   const newHistory = moveHistory.slice(0, historyIndex + 1);
@@ -1126,6 +1265,7 @@ function App() {
                       board: newBoard.map(r => [...r]),
                       turn: turn,
                       enPassantTarget,
+                      castlingRights: JSON.parse(JSON.stringify(castlingRights)),
                     };
 
                     const newHistory = moveHistory.slice(0, historyIndex + 1);
@@ -1255,9 +1395,15 @@ function App() {
 
                 let whiteText = '';
                 if (whiteMove) {
-                  const from = `${String.fromCharCode(97 + whiteMove.from.col)}${8 - whiteMove.from.row}`;
-                  const to = `${String.fromCharCode(97 + whiteMove.to.col)}${8 - whiteMove.to.row}`;
-                  whiteText = `W: ${whiteMove.piece} ${from}→${to}`;
+                  
+
+                  if (whiteMove.castle) {
+                    whiteText = `W: ${whiteMove.castle}`;
+                  } else {
+                    const from = `${String.fromCharCode(97 + whiteMove.from.col)}${8 - whiteMove.from.row}`;
+                    const to = `${String.fromCharCode(97 + whiteMove.to.col)}${8 - whiteMove.to.row}`;
+                    whiteText = `W: ${whiteMove.piece} ${from}→${to}`;
+                  }
 
                   if (whiteMove.promotion) {
                     whiteText += `=${whiteMove.promotion}`;
@@ -1270,9 +1416,15 @@ function App() {
                 }
                 let blackText = '';
                 if (blackMove) {
-                  const from = `${String.fromCharCode(97 + blackMove.from.col)}${8 - blackMove.from.row}`;
-                  const to = `${String.fromCharCode(97 + blackMove.to.col)}${8 - blackMove.to.row}`;
-                  blackText = `B: ${blackMove.piece} ${from}→${to}`;
+                  
+
+                  if (blackMove.castle) {
+                    blackText = `B: ${blackMove.castle}`;
+                  } else {
+                    const from = `${String.fromCharCode(97 + blackMove.from.col)}${8 - blackMove.from.row}`;
+                    const to = `${String.fromCharCode(97 + blackMove.to.col)}${8 - blackMove.to.row}`;
+                    blackText = `B: ${blackMove.piece} ${from}→${to}`;
+                  }
 
                   if (blackMove.promotion) {
                     blackText += `=${blackMove.promotion}`;
