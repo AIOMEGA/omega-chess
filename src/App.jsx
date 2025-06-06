@@ -34,12 +34,21 @@ const pieceImages = {
 const WHITE_PIECES = ['♙', '♘', '♗', '♖', '♕', '♔'];
 const BLACK_PIECES = ['♟', '♞', '♝', '♜', '♛', '♚'];
 
+// Utility helpers reused across the app
+const isWhitePiece = (p) => WHITE_PIECES.includes(p);
+const isBlackPiece = (p) => BLACK_PIECES.includes(p);
+const isEnemyPiece = (p, isWhite) =>
+  isWhite ? isBlackPiece(p) : isWhitePiece(p);
+const isSameTeam = (p1, p2) =>
+  (isWhitePiece(p1) && isWhitePiece(p2)) ||
+  (isBlackPiece(p1) && isBlackPiece(p2));
+
+const cloneBoard = (board) => board.map((r) => [...r]);
+const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+
 function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
   const isWhite = piece === '♙';
-  const isBlack = piece === '♟';
 
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
   const validMoves = [];
 
   const forward = isWhite ? -1 : 1;
@@ -64,12 +73,7 @@ function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
     if (target === '') {
       // Empty square — allow in any direction
       validMoves.push([newRow, newCol]);
-    } else if (
-      isDiagonal && (
-        (isWhite && blackPieces.includes(target)) ||
-        (isBlack && whitePieces.includes(target))
-      )
-    ) {
+    } else if (isDiagonal && isEnemyPiece(target, isWhite)) {
       // Capture diagonally only
       validMoves.push([newRow, newCol]);
     }
@@ -100,10 +104,6 @@ function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
 
 function getValidRookMoves(board, row, col, piece) {
   const isWhite = piece === '♖';
-  const isBlack = piece === '♜';
-
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
 
   const validMoves = [];
   const directions = [
@@ -125,8 +125,7 @@ function getValidRookMoves(board, row, col, piece) {
         if (target === '') {
           validMoves.push([r, c]); // normal movement
         } else {
-          const isEnemy = (isWhite && blackPieces.includes(target)) || (isBlack && whitePieces.includes(target));
-          if (isEnemy) {
+          if (isEnemyPiece(target, isWhite)) {
             validMoves.push([r, c]); // capture the blocker
           }
 
@@ -134,9 +133,7 @@ function getValidRookMoves(board, row, col, piece) {
         }
       } else {
         const behindPiece = board[r][c];
-        const isEnemy = (isWhite && blackPieces.includes(behindPiece)) || (isBlack && whitePieces.includes(behindPiece));
-
-        if (behindPiece === '' || isEnemy) {
+        if (behindPiece === '' || isEnemyPiece(behindPiece, isWhite)) {
           validMoves.push([r, c]); // jump move: land only directly behind
         }
 
@@ -153,14 +150,10 @@ function getValidRookMoves(board, row, col, piece) {
 
 function getValidQueenMoves(board, row, col, piece) {
   const isWhite = piece === '♕';
-  const isBlack = piece === '♛';
 
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
   const validMoves = [];
 
-  const isEnemy = (target) =>
-    isWhite ? blackPieces.includes(target) : whitePieces.includes(target);
+  const isEnemy = (target) => isEnemyPiece(target, isWhite);
 
   const isBlocked = (r, c) => board[r][c] !== '';
 
@@ -220,10 +213,7 @@ function getValidQueenMoves(board, row, col, piece) {
 
 function getValidKnightMoves(board, row, col, piece) {
   const isWhite = piece === '♘';
-  const isBlack = piece === '♞';
 
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
   const validMoves = [];
 
   for (let dr = -2; dr <= 2; dr++) {
@@ -238,13 +228,8 @@ function getValidKnightMoves(board, row, col, piece) {
       const target = board[r][c];
       if (target === '') {
         validMoves.push([r, c]);
-      } else {
-        const isEnemy = isWhite
-          ? blackPieces.includes(target)
-          : whitePieces.includes(target);
-        if (isEnemy) {
-          validMoves.push([r, c]);
-        }
+      } else if (isEnemyPiece(target, isWhite)) {
+        validMoves.push([r, c]);
       }
     }
   }
@@ -256,14 +241,10 @@ function getValidKnightMoves(board, row, col, piece) {
 
 function getValidBishopMoves(board, row, col, piece) {
   const isWhite = piece === '♗';
-  const isBlack = piece === '♝';
 
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
   const validMoves = [];
 
-  const isEnemy = (target) =>
-    isWhite ? blackPieces.includes(target) : whitePieces.includes(target);
+  const isEnemy = (target) => isEnemyPiece(target, isWhite);
 
   const directions = [
     [-1, -1], [-1, 0], [-1, 1],
@@ -304,10 +285,8 @@ function getValidBishopMoves(board, row, col, piece) {
 }
 
 function isSquareAttacked(board, row, col, attackerIsWhite) {
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
   const isEnemy = (piece) =>
-    attackerIsWhite ? whitePieces.includes(piece) : blackPieces.includes(piece);
+    attackerIsWhite ? isWhitePiece(piece) : isBlackPiece(piece);
 
   // Helper to reuse your move checkers (just reuse your logic here!)
   const getAllEnemyMoves = (r, c, piece) => {
@@ -360,7 +339,7 @@ function isKingInCheck(board, color) {
 }
 
 function simulateMove(board, fromRow, fromCol, toRow, toCol, piece, enPassantTarget) {
-  const newBoard = board.map(r => [...r]);
+  const newBoard = cloneBoard(board);
 
   if (
     (piece === '♙' || piece === '♟') &&
@@ -393,7 +372,7 @@ function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget
       const kingSide = c > fromCol;
       const rookFromCol = kingSide ? 7 : 0;
       const rookToCol = kingSide ? c - 1 : c + 1;
-      newBoard = board.map(row => [...row]);
+      const newBoard = cloneBoard(board);
       newBoard[fromRow][fromCol] = '';
       newBoard[r][c] = piece;
       newBoard[fromRow][rookFromCol] = '';
@@ -436,14 +415,8 @@ function hasAnyLegalMoves(board, color, kingState, enPassantTarget, castlingRigh
 
 function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
   const isWhite = piece === '♔';
-  const isBlack = piece === '♚';
-
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
-  const isEnemy = (target) =>
-    isWhite ? blackPieces.includes(target) : whitePieces.includes(target);
-  const isSameTeam = (target) =>
-    isWhite ? whitePieces.includes(target) : blackPieces.includes(target);
+  const isEnemy = (target) => isEnemyPiece(target, isWhite);
+  const sameTeam = (target) => isWhitePiece(target) === isWhite;
 
   const directions = [
     [-1, -1], [-1, 0], [-1, 1],
@@ -461,7 +434,7 @@ function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
     const target = board[r][c];
     if (target === '' || isEnemy(target)) {
       // Simulate the move
-      const simulatedBoard = board.map(row => [...row]);
+      const simulatedBoard = cloneBoard(board);
       simulatedBoard[row][col] = ''; // Clear old king position
       simulatedBoard[r][c] = piece; // Move king to new position
     
@@ -534,13 +507,13 @@ function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
 }
 
 function performSummon(board, row, col, color, pieceType = '♕') {
-  const newBoard = board.map(r => [...r]);
+  const newBoard = cloneBoard(board);
   newBoard[row][col] = pieceType;
   return newBoard;
 }
 
 function performPromotion(board, row, col, fromRow, fromCol, color, piece) {
-  const newBoard = JSON.parse(JSON.stringify(board));
+  const newBoard = deepClone(board);
   newBoard[fromRow][fromCol] = '';
   newBoard[row][col] = piece;
   return newBoard;
@@ -573,6 +546,14 @@ function App() {
   const [historyIndex, setHistoryIndex] = useState(-1); // index of current move
 
   const [statusMessage, setStatusMessage] = useState('');
+
+  // Helper to record moves into history
+  const recordMove = (move) => {
+    const newHistory = moveHistory.slice(0, historyIndex + 1);
+    newHistory.push(move);
+    setMoveHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
 
   // useEffects
 
@@ -608,15 +589,15 @@ function App() {
       setBoard(prev.board);
       setTurn(prev.turn === 'white' ? 'black' : 'white');
       if (prev.kingState) {
-        setKingState(JSON.parse(JSON.stringify(prev.kingState)));
+        setKingState(deepClone(prev.kingState));
       }
       if (prev.castlingRights) {
-        setCastlingRights(JSON.parse(JSON.stringify(prev.castlingRights)));
+        setCastlingRights(deepClone(prev.castlingRights));
       }
       setEnPassantTarget(prev.enPassantTarget || null);
     } else {
       // If going before the first move, reset everything
-      setBoard(initialBoard.map(r => [...r]));
+      setBoard(cloneBoard(initialBoard));
       setTurn('white');
       setKingState({
         white: { hasSummoned: false, needsReturn: false, returnedHome: false },
@@ -639,10 +620,10 @@ function App() {
     setBoard(next.board);
     setTurn(next.turn === 'white' ? 'black' : 'white');
     if (next.kingState) {
-      setKingState(JSON.parse(JSON.stringify(next.kingState)));
+      setKingState(deepClone(next.kingState));
     }
     if (next.castlingRights) {
-      setCastlingRights(JSON.parse(JSON.stringify(next.castlingRights)));
+      setCastlingRights(deepClone(next.castlingRights));
     }
     setEnPassantTarget(next.enPassantTarget || null);
     setHistoryIndex(newIndex);
@@ -654,14 +635,14 @@ function App() {
       setBoard(move.board);
       setTurn(move.turn === 'white' ? 'black' : 'white');
       if (move.kingState) {
-        setKingState(JSON.parse(JSON.stringify(move.kingState)));
+        setKingState(deepClone(move.kingState));
       }
       if (move.castlingRights) {
-        setCastlingRights(JSON.parse(JSON.stringify(move.castlingRights)));
+        setCastlingRights(deepClone(move.castlingRights));
       }
       setEnPassantTarget(move.enPassantTarget || null);
     } else {
-      setBoard(initialBoard.map(r => [...r]));
+      setBoard(cloneBoard(initialBoard));
       setTurn('white');
       setKingState({
         white: { hasSummoned: false, needsReturn: false, returnedHome: false },
@@ -696,15 +677,6 @@ function App() {
     ? ['♕', '♘', '♖', '♗']
     : ['♛', '♞', '♜', '♝'];
 
-  const whitePieces = ['♙', '♘', '♗', '♖', '♕', '♔'];
-  const blackPieces = ['♟', '♞', '♝', '♜', '♛', '♚'];
-
-  const isSameTeam = (p1, p2) => {
-    if (whitePieces.includes(p1) && whitePieces.includes(p2)) return true;
-    if (blackPieces.includes(p1) && blackPieces.includes(p2)) return true;
-    return false;
-  };
-
   const handleClick = (row, col) => {
     const piece = board[row][col];
     const color = piece === '♔' ? 'white' : 'black'; 
@@ -724,16 +696,12 @@ function App() {
           : { row: summonOptions.row, col: summonOptions.col },
         to: { row: summonOptions.row, col: summonOptions.col },
         piece: summonOptions.color === 'white' ? '♔' : '♚',
-        board: board.map(r => [...r]),
+        board: cloneBoard(board),
         turn: turn,
-        castlingRights: JSON.parse(JSON.stringify(castlingRights)),
+        castlingRights: deepClone(castlingRights),
       };
 
-      const newHistory = moveHistory.slice(0, historyIndex + 1);
-      newHistory.push(move);
-      setMoveHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
-
+      recordMove(move);
       setSummonOptions(null);
       setLastKingMove(null);
       setTurn(prev => (prev === 'white' ? 'black' : 'white'));
@@ -750,8 +718,8 @@ function App() {
     // Selecting a piece
     if (!selected) {
       if (piece !== '') {
-        const isWhitePiece = whitePieces.includes(piece);
-        if ((turn === 'white' && isWhitePiece) || (turn === 'black' && !isWhitePiece)) {
+        const pieceIsWhite = isWhitePiece(piece);
+        if ((turn === 'white' && pieceIsWhite) || (turn === 'black' && !pieceIsWhite)) {
           setSelected({ row, col });
         }
       }
@@ -796,7 +764,7 @@ function App() {
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
     
     if (isValidMove) {
-      const newBoard = board.map(r => [...r]);
+      const newBoard = cloneBoard(board);
       const movingPawn = selectedPiece;
     
       const movedPiece = board[selected.row][selected.col];
@@ -831,17 +799,14 @@ function App() {
           to: { row, col },
           piece: selectedPiece,
           castle: kingSide ? 'O-O' : 'O-O-O',
-          board: newBoard.map(r => [...r]),
+          board: cloneBoard(newBoard),
           turn: turn,
-          kingState: JSON.parse(JSON.stringify(kingState)),
+          kingState: deepClone(kingState),
           enPassantTarget: null,
-          castlingRights: JSON.parse(JSON.stringify(updatedRights)),
+          castlingRights: deepClone(updatedRights),
         };
 
-        const newHistory = moveHistory.slice(0, historyIndex + 1);
-        newHistory.push(move);
-        setMoveHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
+        recordMove(move);
         setTurn(prev => (prev === 'white' ? 'black' : 'white'));
         setSelected(null);
         return;
@@ -849,8 +814,8 @@ function App() {
 
       // Ensure only current player's pieces can move
       const isWhiteTurn = turn === 'white';
-      const isWhitePiece = whitePieces.includes(selectedPiece);
-      if ((isWhiteTurn && !isWhitePiece) || (!isWhiteTurn && isWhitePiece)) {
+      const isWhitePieceSelected = isWhitePiece(selectedPiece);
+      if ((isWhiteTurn && !isWhitePieceSelected) || (!isWhiteTurn && isWhitePieceSelected)) {
         return;
       }
 
@@ -943,17 +908,14 @@ function App() {
           to: { row, col },
           piece: selectedPiece,
           captured: board[row][col] || null,
-          board: newBoard.map(r => [...r]),
+          board: cloneBoard(newBoard),
           turn: turn,
-          kingState: JSON.parse(JSON.stringify(kingState)),
+          kingState: deepClone(kingState),
           enPassantTarget: newEnPassantTarget,
-          castlingRights: JSON.parse(JSON.stringify(updatedRights)),
+          castlingRights: deepClone(updatedRights),
         };
 
-        const newHistory = moveHistory.slice(0, historyIndex + 1);
-        newHistory.push(move);
-        setMoveHistory(newHistory);
-        setHistoryIndex(newHistory.length - 1);
+        recordMove(move);
         setTurn(prev => (prev === 'white' ? 'black' : 'white'));
       }
       
@@ -1174,20 +1136,16 @@ function App() {
                           piece: symbol,
                           to: { row: summonOptions.row, col: c }
                         },
-                        board: newBoard.map(r => [...r]),
+                        board: cloneBoard(newBoard),
                         turn: turn,
-                        kingState: JSON.parse(JSON.stringify(newKingState)),
+                        kingState: deepClone(newKingState),
                         enPassantTarget,
-                        castlingRights: JSON.parse(JSON.stringify(castlingRights)),
+                        castlingRights: deepClone(castlingRights),
                       };
 
                       // THEN update game state
                       
-                      const newHistory = moveHistory.slice(0, historyIndex + 1);
-                      newHistory.push(move);
-                      setMoveHistory(newHistory);
-                      setHistoryIndex(newHistory.length - 1);
-
+                      recordMove(move);
                       setBoard(newBoard);
                       setTurn(prev => (prev === 'white' ? 'black' : 'white'));
                       setSummonOptions(null);
@@ -1206,18 +1164,14 @@ function App() {
                       : { row: summonOptions.row, col: summonOptions.col },
                     to: { row: summonOptions.row, col: summonOptions.col },
                     piece: summonOptions.color === 'white' ? '♔' : '♚',
-                    board: board.map(r => [...r]),
+                    board: cloneBoard(board),
                     turn: turn,
-                    kingState: JSON.parse(JSON.stringify(kingState)),
+                    kingState: deepClone(kingState),
                     enPassantTarget,
-                    castlingRights: JSON.parse(JSON.stringify(castlingRights)),
+                    castlingRights: deepClone(castlingRights),
                   };
 
-                  const newHistory = moveHistory.slice(0, historyIndex + 1);
-                  newHistory.push(move);
-                  setMoveHistory(newHistory);
-                  setHistoryIndex(newHistory.length - 1);
-
+                  recordMove(move);
                   setSummonOptions(null);
                   setLastKingMove(null);
                   setTurn(prev => (prev === 'white' ? 'black' : 'white'));
@@ -1262,17 +1216,13 @@ function App() {
                       to: { row: promotionOptions.row, col: promotionOptions.col },
                       piece: promotionOptions.color === 'white' ? '♙' : '♟',
                       promotion: symbol,
-                      board: newBoard.map(r => [...r]),
+                      board: cloneBoard(newBoard),
                       turn: turn,
                       enPassantTarget,
-                      castlingRights: JSON.parse(JSON.stringify(castlingRights)),
+                      castlingRights: deepClone(castlingRights),
                     };
 
-                    const newHistory = moveHistory.slice(0, historyIndex + 1);
-                    newHistory.push(move);
-                    setMoveHistory(newHistory);
-                    setHistoryIndex(newHistory.length - 1);
-
+                    recordMove(move);
                     setBoard(newBoard);
                     setPromotionOptions(null);
                     setSelected(null);
@@ -1477,3 +1427,4 @@ function App() {
 }
 
 export default App;
+// 1480 -> 1430
