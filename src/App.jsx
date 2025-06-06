@@ -48,6 +48,19 @@ const cloneBoard = (board) => board.map((r) => [...r]);
 // Utility to deep clone objects (used for history snapshots)
 const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
 
+// Serialize board position plus turn/castling/en passant to detect repetitions
+function boardKey(board, turn, castlingRights, enPassantTarget) {
+  const boardStr = board.map((r) => r.join('')).join('/');
+  const rights = [
+    castlingRights.white.kingSide ? 'K' : '',
+    castlingRights.white.queenSide ? 'Q' : '',
+    castlingRights.black.kingSide ? 'k' : '',
+    castlingRights.black.queenSide ? 'q' : '',
+  ].join('');
+  const ep = enPassantTarget ? `${enPassantTarget.row}${enPassantTarget.col}` : '-';
+  return `${boardStr} ${turn} ${rights} ${ep}`;
+}
+
 function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
   const isWhite = piece === '♙';
 
@@ -422,6 +435,11 @@ function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget
       legal.push(move);
       continue;
     }
+    if (typeof move[0] !== 'number' || typeof move[1] !== 'number') {
+      // e.g. ['summon', row, col] -- special moves that don't require simulation
+      legal.push(move);
+      continue;
+    }
     const [r, c] = move;
     let newBoard;
     if ((piece === '♔' || piece === '♚') && Math.abs(c - fromCol) === 2 && r === fromRow) {
@@ -618,6 +636,25 @@ function App() {
   // Holds winner color when checkmate occurs
   const [checkmateInfo, setCheckmateInfo] = useState(null); // { winner: 'white'|'black' }
 
+  // Information when a draw is reached
+  const [drawInfo, setDrawInfo] = useState(null); // { type, message }
+  // Winner color when a resignation happens
+  const [resignInfo, setResignInfo] = useState(null); // { winner: 'white'|'black' }
+  // Counts half-moves since the last capture or pawn move
+  const [, setHalfmoveClock] = useState(0); // half-move counter for fifty-move rule
+  // Track occurrences of board positions for repetition detection
+  const [, setPositionCounts] = useState({});
+
+  useEffect(() => {
+    const key = boardKey(
+      initialBoard,
+      'white',
+      { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: true } },
+      null
+    );
+    setPositionCounts({ [key]: 1 });
+  }, []);
+
   // Helper to push a move onto the history stack. If we have undone moves,
   // they are sliced off before the new move is appended.
   const recordMove = (move) => {
@@ -625,6 +662,31 @@ function App() {
     newHistory.push(move);
     setMoveHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
+
+    const isPawnMove = move.piece === '♙' || move.piece === '♟';
+    const isCapture = !!move.captured;
+    setHalfmoveClock((hc) => {
+      const newClock = isPawnMove || isCapture ? 0 : hc + 1;
+      if (newClock >= 100) {
+        setDrawInfo({ type: 'fifty', message: 'Draw by fifty-move rule.' });
+      }
+      return newClock;
+    });
+
+    const key = boardKey(
+      move.board,
+      move.turn === 'white' ? 'black' : 'white',
+      move.castlingRights,
+      move.enPassantTarget
+    );
+    setPositionCounts((prev) => {
+      const count = (prev[key] || 0) + 1;
+      const updated = { ...prev, [key]: count };
+      if (count >= 3) {
+        setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
+      }
+      return updated;
+    });
   };
 
   // --- Hooks ---
@@ -636,7 +698,7 @@ function App() {
     }
   }, [historyIndex]);
 
-  // Watch board/turn changes to show check/checkmate messages
+  // Watch board/turn changes to show check/checkmate/draw messages
   useEffect(() => {
     const inCheck = isKingInCheck(board, turn);
     const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget, castlingRights);
@@ -644,10 +706,22 @@ function App() {
     if (inCheck && !hasMoves) {
       setCheckmateInfo({ winner: turn === 'white' ? 'black' : 'white' });
       setStatusMessage('');
-    } else {
-      setCheckmateInfo(null);
-      setStatusMessage('');
+      return;
     }
+    setCheckmateInfo(null);
+
+    if (!inCheck && !hasMoves) {
+      setDrawInfo({ type: 'stalemate', message: 'Draw by stalemate.' });
+      return;
+    }
+
+    const pieces = board.flat().filter((p) => p !== '');
+    const onlyKings = pieces.every((p) => p === '♔' || p === '♚');
+    if (onlyKings) {
+      setDrawInfo({ type: 'insufficient', message: 'Draw due to insufficient material.' });
+    }
+
+    setStatusMessage('');
   }, [board, turn]);
 
   const undoMove = () => {
@@ -1097,6 +1171,18 @@ function App() {
     setHistoryIndex(-1);
     setStatusMessage('');
     setCheckmateInfo(null);
+    setDrawInfo(null);
+    setResignInfo(null);
+    setHalfmoveClock(0);
+    setPositionCounts(() => {
+      const key = boardKey(
+        initialBoard,
+        'white',
+        { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: true } },
+        null
+      );
+      return { [key]: 1 };
+    });
   };
   
 
@@ -1111,6 +1197,32 @@ function App() {
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
               <button onClick={resetGame}>Play Again</button>
               <button onClick={() => setCheckmateInfo(null)}>Review Game</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {drawInfo && (
+        <div className="overlay" onClick={() => setDrawInfo(null)}>
+          <div className="checkmate-dialog" onClick={(e) => e.stopPropagation()}>
+            <div style={{ marginBottom: '12px', fontSize: '24px' }}>
+              {drawInfo.message}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+              <button onClick={resetGame}>Play Again</button>
+              <button onClick={() => setDrawInfo(null)}>Review Game</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {resignInfo && (
+        <div className="overlay" onClick={() => setResignInfo(null)}>
+          <div className="checkmate-dialog" onClick={(e) => e.stopPropagation()}>
+            <div style={{ marginBottom: '12px', fontSize: '24px' }}>
+              Resignation! {resignInfo.winner} wins.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+              <button onClick={resetGame}>Play Again</button>
+              <button onClick={() => setResignInfo(null)}>Review Game</button>
             </div>
           </div>
         </div>
@@ -1458,6 +1570,8 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
             <button onClick={undoMove} disabled={historyIndex < 0}>Undo</button>
             <button onClick={redoMove} disabled={historyIndex >= moveHistory.length - 1}>Redo</button>
+            <button onClick={() => setDrawInfo({ type: 'agreement', message: 'Draw by agreement.' })}>Draw</button>
+            <button onClick={() => setResignInfo({ winner: turn === 'white' ? 'black' : 'white' })}>Resign</button>
           </div>
           <div 
             ref={moveListRef}
