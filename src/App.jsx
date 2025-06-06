@@ -161,8 +161,6 @@ function getValidQueenMoves(board, row, col, piece) {
 
   const isEnemy = (target) => isEnemyPiece(target, isWhite);
 
-  const isBlocked = (r, c) => board[r][c] !== '';
-
   // Ray cast across SVG board to check that no piece lies between
   // the queen and target square when using sliding moves.
   function hasLineOfSight(toRow, toCol) {
@@ -440,7 +438,6 @@ function hasAnyLegalMoves(board, color, kingState, enPassantTarget, castlingRigh
 function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
   const isWhite = piece === '♔';
   const isEnemy = (target) => isEnemyPiece(target, isWhite);
-  const sameTeam = (target) => isWhitePiece(target) === isWhite;
 
   const directions = [
     [-1, -1], [-1, 0], [-1, 1],
@@ -714,7 +711,6 @@ function App() {
   // them, triggering promotions and summoning UIs as well as castling logic.
   const handleClick = (row, col) => {
     const piece = board[row][col];
-    const color = piece === '♔' ? 'white' : 'black'; 
 
     // Close open promotion GUIs if open
     if (promotionOptions) {
