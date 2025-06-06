@@ -324,6 +324,46 @@ function isSquareAttacked(board, row, col, attackerIsWhite) {
   return false;
 }
 
+// Returns the positions of any pieces checking the king of the given color
+function getCheckingPieces(board, color) {
+  const kingPos = findKingPosition(board, color === 'black');
+  if (!kingPos) return null;
+
+  const attackerIsWhite = color === 'black';
+  const attackers = [];
+
+  const isEnemy = (piece) =>
+    attackerIsWhite ? isWhitePiece(piece) : isBlackPiece(piece);
+
+  const getAllEnemyMoves = (r, c, piece) => {
+    if (piece === '♙' || piece === '♟') return getValidPawnMoves(board, r, c, piece, null);
+    if (piece === '♘' || piece === '♞') return getValidKnightMoves(board, r, c, piece);
+    if (piece === '♗' || piece === '♝') return getValidBishopMoves(board, r, c, piece);
+    if (piece === '♖' || piece === '♜') return getValidRookMoves(board, r, c, piece);
+    if (piece === '♕' || piece === '♛') return getValidQueenMoves(board, r, c, piece);
+    if (piece === '♔' || piece === '♚') return [];
+    return [];
+  };
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (!isEnemy(piece)) continue;
+
+      const moves = getAllEnemyMoves(r, c, piece);
+      for (const [mr, mc] of moves) {
+        if (mr === kingPos.row && mc === kingPos.col) {
+          attackers.push({ row: r, col: c });
+          break;
+        }
+      }
+    }
+  }
+
+  if (attackers.length === 0) return null;
+  return { king: kingPos, attackers };
+}
+
 // Helper used for check logic to locate a specific colour king on the board.
 function findKingPosition(board, isWhite) {
   const kingSymbol = isWhite ? '♚' : '♔'; // enemy king
@@ -706,6 +746,23 @@ function App() {
   summonOptions?.color === 'white'
     ? ['♕', '♘', '♖', '♗']
     : ['♛', '♞', '♜', '♝'];
+
+  // --- Highlight helpers ---
+  const lastMove = historyIndex >= 0 ? moveHistory[historyIndex] : null;
+  const lastFromKey = lastMove ? `${lastMove.from.row}-${lastMove.from.col}` : null;
+  const lastToKey = lastMove ? `${lastMove.to.row}-${lastMove.to.col}` : null;
+
+  const checkSquares = new Set();
+  const whiteCheck = getCheckingPieces(board, 'white');
+  if (whiteCheck) {
+    checkSquares.add(`${whiteCheck.king.row}-${whiteCheck.king.col}`);
+    whiteCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
+  }
+  const blackCheck = getCheckingPieces(board, 'black');
+  if (blackCheck) {
+    checkSquares.add(`${blackCheck.king.row}-${blackCheck.king.col}`);
+    blackCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
+  }
 
   // Main click handler for board squares. Handles selecting pieces, moving
   // them, triggering promotions and summoning UIs as well as castling logic.
@@ -1334,12 +1391,27 @@ function App() {
                   const isDark = (row + col) % 2 === 1;
                   const isSelected = selected?.row === row && selected?.col === col;
 
+                  const key = `${row}-${col}`;
+                  const isLastFrom = key === lastFromKey;
+                  const isLastTo = key === lastToKey;
+                  const isCheck = checkSquares.has(key);
+
                   return (
                     <div
                       key={col}
                       className={`square ${isDark ? 'dark' : 'light'} ${isSelected ? 'selected' : ''}`}
                       onClick={() => handleClick(row, col)}
                     >
+                      {(isLastFrom || isLastTo) && (
+                        <div
+                          className="highlight-overlay last-move-overlay"
+                        ></div>
+                      )}
+                      {isCheck && (
+                        <div
+                          className="highlight-overlay check-overlay"
+                        ></div>
+                      )}
                       <div
                         className="label"
                         style={{

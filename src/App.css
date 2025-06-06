@@ -49,6 +49,31 @@ body {
   z-index: 1;
 }
 
+/* Pieces should sit above overlay highlights */
+.square img {
+  position: relative;
+  z-index: 2;
+}
+
+/* Base style for highlight overlays */
+.highlight-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.last-move-overlay {
+  background-color: rgba(255, 255, 0, 0.45);
+}
+
+.check-overlay {
+  background-color: rgba(255, 0, 0, 0.45);
+}
+
 .summon-ui {
   position: absolute;
   z-index: 10;
