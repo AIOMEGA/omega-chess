@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import './App.css';
+import './assets/logo.png'
 
 // Unicode pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
 // Starting layout for a new game
@@ -1840,6 +1841,11 @@ function App() {
         </div>
       </div>
     </div>
+    <img
+      src="src/assets/logo.png"
+      alt="Ωhess Logo"
+      className="omega-logo"
+    />
   </div>
     
   );

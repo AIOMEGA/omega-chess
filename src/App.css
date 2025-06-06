@@ -149,3 +149,14 @@ body {
 .checkmate-dialog button {
   margin: 0 8px;
 }
+
+.omega-logo {
+  position: fixed;  
+  top: 10px;
+  left: 10px;
+  width: 180px;   
+  height: auto;
+  z-index: 0;           
+  pointer-events: none;  
+  opacity: 1; 
+}
