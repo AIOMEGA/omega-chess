@@ -1334,20 +1334,16 @@ function App() {
       )}
       <div
         style={{ position: 'relative', width: '840px', height: '840px' }}
-        ref={boardRef}
-        onMouseDown={handleBoardMouseDown}
-        onMouseUp={handleBoardMouseUp}
-        onContextMenu={(e) => e.preventDefault()}
-        onClick={() => {
-        if (promotionOptions) {
-          setPromotionOptions(null);
-          setSelected(null); // <== Add this
-        }
-        if (summonOptions) {
-          setSummonOptions(null);
-          setSelected(null); // <== Add this
-        }
-      }}
+      //   onClick={() => {
+      //   if (promotionOptions) {
+      //     setPromotionOptions(null);
+      //     setSelected(null); // <== Add this
+      //   }
+      //   if (summonOptions) {
+      //     setSummonOptions(null);
+      //     setSelected(null); // <== Add this
+      //   }
+      // }}
       >
       <svg
         width="840"
@@ -1653,7 +1649,7 @@ function App() {
       <div style={{ display: 'flex', gap: '16px' }}>
         {/* Left: Board container */}
         <div
-          style={{ position: 'relative', width: '840px', height: '840px' }}
+          style={{ position: 'relative', width: '840px', height: '840px' }} ref={boardRef} onMouseDown={handleBoardMouseDown} onMouseUp={handleBoardMouseUp} onContextMenu={(e) => e.preventDefault()}
           onClick={() => {
             if (promotionOptions) {
               setPromotionOptions(null);
