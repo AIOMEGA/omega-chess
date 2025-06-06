@@ -716,8 +716,10 @@ function App() {
       if (match !== -1) {
         const copy = prev.slice();
         copy.splice(match, 1);
+        console.debug('Removed annotation', ann);
         return copy;
       }
+      console.debug('Added annotation', ann);
       return [...prev, ann];
     });
   };
@@ -728,6 +730,7 @@ function App() {
     const sq = getSquareFromEvent(e);
     if (!sq) return;
     rightDragRef.current = { dragging: true, start: sq, shift: e.shiftKey };
+    console.debug('Right mouse down', { square: sq, shift: e.shiftKey });
   };
 
   const handleBoardMouseUp = (e) => {
@@ -741,10 +744,13 @@ function App() {
       return;
     }
     if (data.start.row === sq.row && data.start.col === sq.col) {
+      console.debug('Toggle circle', sq);
       toggleAnnotation({ type: 'circle', row: sq.row, col: sq.col });
     } else if (data.shift) {
+      console.debug('Toggle line', { from: data.start, to: sq });
       toggleAnnotation({ type: 'line', from: data.start, to: sq });
     } else {
+      console.debug('Toggle arrow', { from: data.start, to: sq });
       toggleAnnotation({ type: 'arrow', from: data.start, to: sq });
     }
     rightDragRef.current.dragging = false;
@@ -1353,7 +1359,7 @@ function App() {
           position: 'absolute',
           top: 0,
           left: 0,
-          zIndex: 1,
+          zIndex: 2,
           pointerEvents: 'none',
         }}
       >
