@@ -578,6 +578,8 @@ function App() {
   const [historyIndex, setHistoryIndex] = useState(-1); // index of current move
   // Display helper text such as "check" notices
   const [statusMessage, setStatusMessage] = useState('');
+  // Holds winner color when checkmate occurs
+  const [checkmateInfo, setCheckmateInfo] = useState(null); // { winner: 'white'|'black' }
 
   // Helper to push a move onto the history stack. If we have undone moves,
   // they are sliced off before the new move is appended.
@@ -600,16 +602,13 @@ function App() {
   // Watch board/turn changes to show check/checkmate messages
   useEffect(() => {
     const inCheck = isKingInCheck(board, turn);
-    if (inCheck) {
-      const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget, castlingRights);
-      if (hasMoves) {
-        setStatusMessage('');
-        // setStatusMessage(`${turn} is in check`);
-      } else {
-        setStatusMessage('');
-        // setStatusMessage(`${turn} is in checkmate!`);
-      }
+    const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget, castlingRights);
+
+    if (inCheck && !hasMoves) {
+      setCheckmateInfo({ winner: turn === 'white' ? 'black' : 'white' });
+      setStatusMessage('');
     } else {
+      setCheckmateInfo(null);
       setStatusMessage('');
     }
   }, [board, turn]);
@@ -1021,17 +1020,51 @@ function App() {
       }
    
     }
-    setSelected(null);
-    
-    
 
+    setSelected(null);
+  };
+  // Used to reset the game after checkmate
+  const resetGame = () => {
+    setBoard(cloneBoard(initialBoard));
+    setSelected(null);
+    setEnPassantTarget(null);
+    setKingState({
+      white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+      black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+    });
+    setSummonOptions(null);
+    setPromotionOptions(null);
+    setCastlingRights({
+      white: { kingSide: true, queenSide: true },
+      black: { kingSide: true, queenSide: true },
+    });
+    setLastKingMove(null);
+    setTurn('white');
+    setMoveHistory([]);
+    setHistoryIndex(-1);
+    setStatusMessage('');
+    setCheckmateInfo(null);
   };
   
 
   return (
-    <div
-      style={{ position: 'relative', width: '840px', height: '840px' }}
-      onClick={() => {
+    <div style={{ position: 'relative' }}>
+      {checkmateInfo && (
+        <div className="overlay" onClick={() => setCheckmateInfo(null)}>
+          <div className="checkmate-dialog" onClick={(e) => e.stopPropagation()}>
+            <div style={{ marginBottom: '12px', fontSize: '24px' }}>
+              Checkmate! {checkmateInfo.winner} wins.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+              <button onClick={resetGame}>Play Again</button>
+              <button onClick={() => setCheckmateInfo(null)}>Review Game</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div
+        style={{ position: 'relative', width: '840px', height: '840px' }}
+        onClick={() => {
         if (promotionOptions) {
           setPromotionOptions(null);
           setSelected(null); // <== Add this
@@ -1041,7 +1074,7 @@ function App() {
           setSelected(null); // <== Add this
         }
       }}      
-    >  
+      >  
       <svg
         width="840"
         height="840"
@@ -1459,6 +1492,7 @@ function App() {
         </div>
       </div>
     </div>
+  </div>
     
   );
 }
