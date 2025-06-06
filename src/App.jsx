@@ -50,15 +50,50 @@ const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
 
 // Serialize board position plus turn/castling/en passant to detect repetitions
 function boardKey(board, turn, castlingRights, enPassantTarget) {
-  const boardStr = board.map((r) => r.join('')).join('/');
+  const map = {
+    '♙': 'P',
+    '♟': 'p',
+    '♘': 'N',
+    '♞': 'n',
+    '♖': 'R',
+    '♜': 'r',
+    '♗': 'B',
+    '♝': 'b',
+    '♕': 'Q',
+    '♛': 'q',
+    '♔': 'K',
+    '♚': 'k',
+  };
+  const rows = board.map((row) => {
+    let str = '';
+    let empty = 0;
+    for (const piece of row) {
+      if (piece === '') {
+        empty += 1;
+      } else {
+        if (empty > 0) {
+          str += empty;
+          empty = 0;
+        }
+        str += map[piece] || piece;
+      }
+    }
+    if (empty > 0) str += empty;
+    return str;
+  });
+  const boardStr = rows.join('/');
   const rights = [
     castlingRights.white.kingSide ? 'K' : '',
     castlingRights.white.queenSide ? 'Q' : '',
     castlingRights.black.kingSide ? 'k' : '',
     castlingRights.black.queenSide ? 'q' : '',
-  ].join('');
-  const ep = enPassantTarget ? `${enPassantTarget.row}${enPassantTarget.col}` : '-';
-  return `${boardStr} ${turn} ${rights} ${ep}`;
+  ]
+  .join('') || '-';
+const ep = enPassantTarget
+  ? String.fromCharCode(97 + enPassantTarget.col) + (8 - enPassantTarget.row)
+  : '-';
+const turnChar = turn === 'white' ? 'w' : 'b';
+return `${boardStr} ${turnChar} ${rights} ${ep}`;
 }
 
 function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
@@ -643,7 +678,7 @@ function App() {
   // Counts half-moves since the last capture or pawn move
   const [, setHalfmoveClock] = useState(0); // half-move counter for fifty-move rule
   // Track occurrences of board positions for repetition detection
-  const [, setPositionCounts] = useState({});
+  const positionCountsRef = useRef({});
 
   useEffect(() => {
     const key = boardKey(
@@ -652,7 +687,8 @@ function App() {
       { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: true } },
       null
     );
-    setPositionCounts({ [key]: 1 });
+    positionCountsRef.current = { [key]: 1 };
+    // console.log('boardKey', key, 'count', 1);
   }, []);
 
   // Helper to push a move onto the history stack. If we have undone moves,
@@ -679,14 +715,13 @@ function App() {
       move.castlingRights,
       move.enPassantTarget
     );
-    setPositionCounts((prev) => {
-      const count = (prev[key] || 0) + 1;
-      const updated = { ...prev, [key]: count };
-      if (count >= 3) {
-        setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
-      }
-      return updated;
-    });
+    const counts = positionCountsRef.current;
+    const count = (counts[key] || 0) + 1;
+    counts[key] = count;
+    // console.log('boardKey', key, 'count', count);
+    if (count >= 3) {
+      setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
+    }
   };
 
   // --- Hooks ---
@@ -1174,15 +1209,14 @@ function App() {
     setDrawInfo(null);
     setResignInfo(null);
     setHalfmoveClock(0);
-    setPositionCounts(() => {
-      const key = boardKey(
-        initialBoard,
-        'white',
-        { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: true } },
-        null
-      );
-      return { [key]: 1 };
-    });
+    const key = boardKey(
+      initialBoard,
+      'white',
+      { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: true } },
+      null
+    );
+    positionCountsRef.current = { [key]: 1 };
+    // console.log('boardKey', key, 'count', 1);
   };
   
 
