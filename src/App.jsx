@@ -716,10 +716,10 @@ function App() {
       if (match !== -1) {
         const copy = prev.slice();
         copy.splice(match, 1);
-        console.debug('Removed annotation', ann);
+        // console.debug('Removed annotation', ann);
         return copy;
       }
-      console.debug('Added annotation', ann);
+      // console.debug('Added annotation', ann);
       return [...prev, ann];
     });
   };
@@ -730,7 +730,7 @@ function App() {
     const sq = getSquareFromEvent(e);
     if (!sq) return;
     rightDragRef.current = { dragging: true, start: sq, shift: e.shiftKey };
-    console.debug('Right mouse down', { square: sq, shift: e.shiftKey });
+    // console.debug('Right mouse down', { square: sq, shift: e.shiftKey });
   };
 
   const handleBoardMouseUp = (e) => {
@@ -744,13 +744,13 @@ function App() {
       return;
     }
     if (data.start.row === sq.row && data.start.col === sq.col) {
-      console.debug('Toggle circle', sq);
+      // console.debug('Toggle circle', sq);
       toggleAnnotation({ type: 'circle', row: sq.row, col: sq.col });
     } else if (data.shift) {
-      console.debug('Toggle line', { from: data.start, to: sq });
+      // console.debug('Toggle line', { from: data.start, to: sq });
       toggleAnnotation({ type: 'line', from: data.start, to: sq });
     } else {
-      console.debug('Toggle arrow', { from: data.start, to: sq });
+      // console.debug('Toggle arrow', { from: data.start, to: sq });
       toggleAnnotation({ type: 'arrow', from: data.start, to: sq });
     }
     rightDragRef.current.dragging = false;
@@ -1382,6 +1382,7 @@ function App() {
           const y1 = a.from.row * squareSize + squareSize / 2 + boardOffset;
           const x2 = a.to.col * squareSize + squareSize / 2 + boardOffset;
           const y2 = a.to.row * squareSize + squareSize / 2 + boardOffset;
+          const stroke = a.type === 'arrow' ? 'orange' : 'red';
           return (
             <line
               key={i}
@@ -1389,7 +1390,7 @@ function App() {
               y1={y1}
               x2={x2}
               y2={y2}
-              stroke="orange"
+              stroke={stroke}
               strokeWidth={12}
               markerEnd={a.type === 'arrow' ? 'url(#ann-arrow)' : undefined}
               opacity="0.65"
