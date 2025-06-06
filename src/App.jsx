@@ -429,7 +429,7 @@ function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget
       const kingSide = c > fromCol;
       const rookFromCol = kingSide ? 7 : 0;
       const rookToCol = kingSide ? c - 1 : c + 1;
-      const newBoard = cloneBoard(board);
+      newBoard = cloneBoard(board);
       newBoard[fromRow][fromCol] = '';
       newBoard[r][c] = piece;
       newBoard[fromRow][rookFromCol] = '';
