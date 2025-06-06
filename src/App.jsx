@@ -33,6 +33,10 @@ const pieceImages = {
   '♚': 'bK.svg',
 };
 
+// Piece groups for easier color checks
+const WHITE_PIECES = ['♙', '♘', '♗', '♖', '♕', '♔'];
+const BLACK_PIECES = ['♟', '♞', '♝', '♜', '♛', '♚'];
+
 function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
   const isWhite = piece === '♙';
   const isBlack = piece === '♟';
@@ -347,6 +351,79 @@ function findKingPosition(board, isWhite) {
   return null;
 }
 
+function isKingInCheck(board, color) {
+  const kingPos = findKingPosition(board, color === 'black');
+  if (!kingPos) return false;
+  return isSquareAttacked(
+    board,
+    kingPos.row,
+    kingPos.col,
+    color === 'black'
+  );
+}
+
+function simulateMove(board, fromRow, fromCol, toRow, toCol, piece, enPassantTarget) {
+  const newBoard = board.map(r => [...r]);
+
+  if (
+    (piece === '♙' || piece === '♟') &&
+    enPassantTarget &&
+    toRow === enPassantTarget.row &&
+    toCol === enPassantTarget.col &&
+    board[toRow][toCol] === ''
+  ) {
+    const captureRow = fromRow;
+    newBoard[captureRow][toCol] = '';
+  }
+
+  newBoard[toRow][toCol] = piece;
+  newBoard[fromRow][fromCol] = '';
+  return newBoard;
+}
+
+function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget) {
+  const color = WHITE_PIECES.includes(piece) ? 'white' : 'black';
+  const legal = [];
+  for (const move of moves) {
+    if (!Array.isArray(move)) {
+      legal.push(move);
+      continue;
+    }
+    const [r, c] = move;
+    const newBoard = simulateMove(board, fromRow, fromCol, r, c, piece, enPassantTarget);
+    if (!isKingInCheck(newBoard, color)) legal.push(move);
+  }
+  return legal;
+}
+
+function hasAnyLegalMoves(board, color, kingState, enPassantTarget) {
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (color === 'white' && !WHITE_PIECES.includes(piece)) continue;
+      if (color === 'black' && !BLACK_PIECES.includes(piece)) continue;
+
+      let moves = [];
+      if (piece === '♙' || piece === '♟')
+        moves = getValidPawnMoves(board, r, c, piece, enPassantTarget);
+      else if (piece === '♖' || piece === '♜')
+        moves = getValidRookMoves(board, r, c, piece);
+      else if (piece === '♕' || piece === '♛')
+        moves = getValidQueenMoves(board, r, c, piece);
+      else if (piece === '♘' || piece === '♞')
+        moves = getValidKnightMoves(board, r, c, piece);
+      else if (piece === '♗' || piece === '♝')
+        moves = getValidBishopMoves(board, r, c, piece);
+      else if (piece === '♔' || piece === '♚')
+        moves = getValidKingMoves(board, r, c, piece, kingState[color]);
+
+      const legal = filterLegalMoves(moves, board, r, c, piece, enPassantTarget);
+      if (legal.length > 0) return true;
+    }
+  }
+  return false;
+}
+
 function getValidKingMoves(board, row, col, piece, kingState) {
   const isWhite = piece === '♔';
   const isBlack = piece === '♚';
@@ -451,6 +528,10 @@ function App() {
   const [moveHistory, setMoveHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1); // index of current move
 
+  const [statusMessage, setStatusMessage] = useState('');
+
+  // useEffects
+
   const moveListRef = useRef(null);
   useEffect(() => {
     if (moveListRef.current) {
@@ -458,6 +539,21 @@ function App() {
     }
   }, [historyIndex]);
 
+  useEffect(() => {
+    const inCheck = isKingInCheck(board, turn);
+    if (inCheck) {
+      const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget);
+      if (hasMoves) {
+        setStatusMessage('');
+        // setStatusMessage(`${turn} is in check`);
+      } else {
+        setStatusMessage('');
+        // setStatusMessage(`${turn} is in checkmate!`);
+      }
+    } else {
+      setStatusMessage('');
+    }
+  }, [board, turn]);
 
   const undoMove = () => {
     if (historyIndex < 0) return;
@@ -633,7 +729,7 @@ function App() {
     if (selectedPiece === '♔' || selectedPiece === '♚') {
       validMoves = getValidKingMoves(board, selected.row, selected.col, selectedPiece, kingState);
     }
-    
+    validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, selectedPiece, enPassantTarget);
 
     
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
@@ -839,6 +935,8 @@ function App() {
           else if (piece === '♘' || piece === '♞') validMoves = getValidKnightMoves(board, selected.row, selected.col, piece);
           else if (piece === '♗' || piece === '♝') validMoves = getValidBishopMoves(board, selected.row, selected.col, piece);
           else if (piece === '♔' || piece === '♚') validMoves = getValidKingMoves(board, selected.row, selected.col, piece, kingState);
+
+          validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, piece, enPassantTarget);
 
           return validMoves.map((move, i) => {
             if (!Array.isArray(move) || typeof move[0] !== 'number' || typeof move[1] !== 'number') return null;
@@ -1061,6 +1159,11 @@ function App() {
         </div>
       )}
 
+      {statusMessage && (
+        <div style={{ color: 'white', marginBottom: '8px', fontWeight: 'bold' }}>
+          {statusMessage}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '16px' }}>
         {/* Left: Board container */}
