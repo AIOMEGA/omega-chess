@@ -1366,33 +1366,18 @@ function App() {
         <defs>
           <marker
             id="ann-arrow"
-            markerWidth="10"
-            markerHeight="10"
-            refX="5"
-            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            refX="4"
+            refY="2.5"
             orient="auto"
             markerUnits="strokeWidth"
           >
-            <path d="M0,0 L10,5 L0,10 Z" fill="red" />
+            <path d="M3,1 L6,2.5 L3,4 Z" fill="orange" />
           </marker>
         </defs>
         {annotations.map((a, i) => {
-          if (a.type === 'circle') {
-            const cx = a.col * squareSize + squareSize / 2 + boardOffset;
-            const cy = a.row * squareSize + squareSize / 2 + boardOffset;
-            return (
-              <circle
-                key={i}
-                cx={cx}
-                cy={cy}
-                r={40}
-                fill="none"
-                stroke="red"
-                strokeWidth={6}
-                opacity="0.8"
-              />
-            );
-          }
+
           const x1 = a.from.col * squareSize + squareSize / 2 + boardOffset;
           const y1 = a.from.row * squareSize + squareSize / 2 + boardOffset;
           const x2 = a.to.col * squareSize + squareSize / 2 + boardOffset;
@@ -1404,10 +1389,10 @@ function App() {
               y1={y1}
               x2={x2}
               y2={y2}
-              stroke="red"
-              strokeWidth={6}
+              stroke="orange"
+              strokeWidth={12}
               markerEnd={a.type === 'arrow' ? 'url(#ann-arrow)' : undefined}
-              opacity="0.8"
+              opacity="0.65"
             />
           );
         })}
@@ -1679,6 +1664,9 @@ function App() {
                   const isLastFrom = key === lastFromKey;
                   const isLastTo = key === lastToKey;
                   const isCheck = checkSquares.has(key);
+                  const isCircleAnn = annotations.some(
+                    (a) => a.type === 'circle' && a.row === row && a.col === col
+                  );
 
                   return (
                     <div
@@ -1692,6 +1680,11 @@ function App() {
                         ></div>
                       )}
                       {isCheck && (
+                        <div
+                          className="highlight-overlay check-overlay"
+                        ></div>
+                      )}
+                      {isCircleAnn && (
                         <div
                           className="highlight-overlay check-overlay"
                         ></div>
