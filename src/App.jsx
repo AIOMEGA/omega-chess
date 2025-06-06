@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 // Unicode pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
-// Hard coded board preset positions
+// Starting layout for a new game
 const initialBoard = [
   ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'],
   ['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟'],
@@ -14,7 +14,7 @@ const initialBoard = [
   ['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖'],
 ];
 
-// Used to set each unicode piece to a svg image I got from https://github.com/lichess-org/lila/tree/master/public/piece
+// Map each Unicode piece to its SVG image file. Assets sourced from https://github.com/lichess-org/lila/tree/master/public/piece
 const pieceImages = {
   '♙': 'wP.svg',
   '♟': 'bP.svg',
@@ -30,7 +30,7 @@ const pieceImages = {
   '♚': 'bK.svg',
 };
 
-// Piece groups for easier color checks
+// Lists of piece symbols to quickly determine piece color
 const WHITE_PIECES = ['♙', '♘', '♗', '♖', '♕', '♔'];
 const BLACK_PIECES = ['♟', '♞', '♝', '♜', '♛', '♚'];
 
@@ -43,7 +43,9 @@ const isSameTeam = (p1, p2) =>
   (isWhitePiece(p1) && isWhitePiece(p2)) ||
   (isBlackPiece(p1) && isBlackPiece(p2));
 
+// Shallow clone used when we want a new board reference
 const cloneBoard = (board) => board.map((r) => [...r]);
+// Utility to deep clone objects (used for history snapshots)
 const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
 
 function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
@@ -102,6 +104,8 @@ function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
   return validMoves;
 }
 
+// Rook movement for Omega chess. Allows normal rook moves and a special
+// 'hop over one piece' mechanic implemented via blockerFound logic.
 function getValidRookMoves(board, row, col, piece) {
   const isWhite = piece === '♖';
 
@@ -148,6 +152,8 @@ function getValidRookMoves(board, row, col, piece) {
   return validMoves;
 }
 
+// Queen movement expands the normal Rook + Bishop movement to the Omega Chess "line of sight" logic
+// which uses pixel based ray tracing to see any tile on the board so long as it's not blocked by another piece.
 function getValidQueenMoves(board, row, col, piece) {
   const isWhite = piece === '♕';
 
@@ -157,6 +163,8 @@ function getValidQueenMoves(board, row, col, piece) {
 
   const isBlocked = (r, c) => board[r][c] !== '';
 
+  // Ray cast across SVG board to check that no piece lies between
+  // the queen and target square when using sliding moves.
   function hasLineOfSight(toRow, toCol) {
     const squareSize = 105;
   
@@ -210,7 +218,8 @@ function getValidQueenMoves(board, row, col, piece) {
   return validMoves;
 }
 
-
+// Knight moves use a 5x5 mask that avoids the centre "3x3" area, creating
+// the extended omnidirectional movement of Omega chess knights.
 function getValidKnightMoves(board, row, col, piece) {
   const isWhite = piece === '♘';
 
@@ -237,8 +246,8 @@ function getValidKnightMoves(board, row, col, piece) {
   return validMoves;
 }
 
-
-
+// Bishop moves combine standard diagonals with a one-step king-like move in
+// any direction, no more exclusively light or dark square bishops as now they can be both.
 function getValidBishopMoves(board, row, col, piece) {
   const isWhite = piece === '♗';
 
@@ -284,6 +293,8 @@ function getValidBishopMoves(board, row, col, piece) {
   return validMoves;
 }
 
+// Utility used for check detection. It scans all opposing pieces and asks each
+// piece's move generator if it could capture the target square.
 function isSquareAttacked(board, row, col, attackerIsWhite) {
   const isEnemy = (piece) =>
     attackerIsWhite ? isWhitePiece(piece) : isBlackPiece(piece);
@@ -315,6 +326,7 @@ function isSquareAttacked(board, row, col, attackerIsWhite) {
   return false;
 }
 
+// Helper used for check logic to locate a specific colour king on the board.
 function findKingPosition(board, isWhite) {
   const kingSymbol = isWhite ? '♚' : '♔'; // enemy king
   for (let r = 0; r < 8; r++) {
@@ -327,6 +339,8 @@ function findKingPosition(board, isWhite) {
   return null;
 }
 
+// Wrapper around isSquareAttacked that first finds the king of the given color
+// and determines if any opposing piece can attack that square.
 function isKingInCheck(board, color) {
   const kingPos = findKingPosition(board, color === 'black');
   if (!kingPos) return false;
@@ -338,6 +352,8 @@ function isKingInCheck(board, color) {
   );
 }
 
+// Helper used when checking move legality. It plays a move on a cloned board
+// and returns the resulting board state. Handles en passant captures.
 function simulateMove(board, fromRow, fromCol, toRow, toCol, piece, enPassantTarget) {
   const newBoard = cloneBoard(board);
 
@@ -357,6 +373,9 @@ function simulateMove(board, fromRow, fromCol, toRow, toCol, piece, enPassantTar
   return newBoard;
 }
 
+// After generating pseudo-legal moves we simulate each one to ensure the
+// current player's king would not remain in check. Castling moves are
+// handled specially here as well.
 function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget) {
   const color = WHITE_PIECES.includes(piece) ? 'white' : 'black';
   const legal = [];
@@ -385,6 +404,8 @@ function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget
   return legal;
 }
 
+// Iterates all pieces of a given color and checks if at least one legal move
+// exists. Used for stalemate/checkmate detection.
 function hasAnyLegalMoves(board, color, kingState, enPassantTarget, castlingRights) {
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
@@ -413,6 +434,9 @@ function hasAnyLegalMoves(board, color, kingState, enPassantTarget, castlingRigh
   return false;
 }
 
+// Main king move generator. Handles normal one-square movement while ensuring
+// the king doesn't move into check, includes custom summoning logic and checks
+// whether castling is available.
 function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
   const isWhite = piece === '♔';
   const isEnemy = (target) => isEnemyPiece(target, isWhite);
@@ -506,12 +530,16 @@ function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
   return validMoves;
 }
 
+// Places a new piece next to the enemy back rank king as part of the king's
+// summoning ability. Returns a cloned board with the piece added.
 function performSummon(board, row, col, color, pieceType = '♕') {
   const newBoard = cloneBoard(board);
   newBoard[row][col] = pieceType;
   return newBoard;
 }
 
+// Handles pawn promotion. Removes the pawn from its original square and places
+// the chosen piece on the target square.
 function performPromotion(board, row, col, fromRow, fromCol, color, piece) {
   const newBoard = deepClone(board);
   newBoard[fromRow][fromCol] = '';
@@ -520,34 +548,39 @@ function performPromotion(board, row, col, fromRow, fromCol, color, piece) {
 }
 
 function App() {
+  // Current board state as an 8x8 array of piece symbols
   const [board, setBoard] = useState(initialBoard);
+  // Currently selected square {row, col} or null
   const [selected, setSelected] = useState(null);
+  // If a pawn advanced two squares last move this holds the square that can be captured en passant
   const [enPassantTarget, setEnPassantTarget] = useState(null); // e.g. { row: 3, col: 4 }
-
+  // Tracks each king's special summoning status
   const [kingState, setKingState] = useState({
     white: { hasSummoned: false, needsReturn: false, returnedHome: false },
     black: { hasSummoned: false, needsReturn: false, returnedHome: false },
   });
-
+  // When a king reaches the back rank we show summoning UI using this state
   const [summonOptions, setSummonOptions] = useState(null); // e.g., { row: 0, col: 4, color: 'black' }
-
+  // UI state for pawn promotion menu
   const [promotionOptions, setPromotionOptions] = useState(null); // { row, col, color, fromRow, fromCol }
-
+  // Track whether each side may still castle on either side
   const [castlingRights, setCastlingRights] = useState({
     white: { kingSide: true, queenSide: true },
     black: { kingSide: true, queenSide: true },
   });
-
+  // Remember the last king move to support canceling summons
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
-
+  // Whose turn it is to move
   const [turn, setTurn] = useState('white');
-
+  // Array of past moves used for undo/redo functionality
   const [moveHistory, setMoveHistory] = useState([]);
+  // Index pointer into moveHistory for current view
   const [historyIndex, setHistoryIndex] = useState(-1); // index of current move
-
+  // Display helper text such as "check" notices
   const [statusMessage, setStatusMessage] = useState('');
 
-  // Helper to record moves into history
+  // Helper to push a move onto the history stack. If we have undone moves,
+  // they are sliced off before the new move is appended.
   const recordMove = (move) => {
     const newHistory = moveHistory.slice(0, historyIndex + 1);
     newHistory.push(move);
@@ -555,8 +588,8 @@ function App() {
     setHistoryIndex(newHistory.length - 1);
   };
 
-  // useEffects
-
+  // --- Hooks ---
+  // Ref so we can auto-scroll the move list when new moves are added
   const moveListRef = useRef(null);
   useEffect(() => {
     if (moveListRef.current) {
@@ -564,6 +597,7 @@ function App() {
     }
   }, [historyIndex]);
 
+  // Watch board/turn changes to show check/checkmate messages
   useEffect(() => {
     const inCheck = isKingInCheck(board, turn);
     if (inCheck) {
@@ -677,6 +711,8 @@ function App() {
     ? ['♕', '♘', '♖', '♗']
     : ['♛', '♞', '♜', '♝'];
 
+  // Main click handler for board squares. Handles selecting pieces, moving
+  // them, triggering promotions and summoning UIs as well as castling logic.
   const handleClick = (row, col) => {
     const piece = board[row][col];
     const color = piece === '♔' ? 'white' : 'black'; 
@@ -776,6 +812,7 @@ function App() {
 
       // Castling move
       if ((selectedPiece === '♔' || selectedPiece === '♚') && Math.abs(col - selected.col) === 2 && row === selected.row) {
+        // Determine castling side and move the rook accordingly
         const isWhite = selectedPiece === '♔';
         const kingSide = col > selected.col;
         const rookFromCol = kingSide ? 7 : 0;
