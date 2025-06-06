@@ -1377,7 +1377,7 @@ function App() {
           </marker>
         </defs>
         {annotations.map((a, i) => {
-
+          if (a.type === 'circle') return null;
           const x1 = a.from.col * squareSize + squareSize / 2 + boardOffset;
           const y1 = a.from.row * squareSize + squareSize / 2 + boardOffset;
           const x2 = a.to.col * squareSize + squareSize / 2 + boardOffset;
