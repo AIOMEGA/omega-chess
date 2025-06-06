@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
-
-const BOARD_SIZE = 8;
-
 // Unicode pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
 // Hard coded board preset positions
 const initialBoard = [
@@ -471,7 +468,6 @@ function getValidKingMoves(board, row, col, piece, kingState) {
   }
 
   // Summoning check
-  const homeRow = isWhite ? 7 : 0;
   const enemyRow = isWhite ? 0 : 7;
 
   const canSummon =
@@ -513,9 +509,6 @@ function App() {
     white: { hasSummoned: false, needsReturn: false, returnedHome: false },
     black: { hasSummoned: false, needsReturn: false, returnedHome: false },
   });
-  
-  const [showSummonMenu, setShowSummonMenu] = useState(null); // { row, col, side }
-  const [pendingSummonPiece, setPendingSummonPiece] = useState(null);
 
   const [summonOptions, setSummonOptions] = useState(null); // e.g., { row: 0, col: 4, color: 'black' }
 
@@ -646,8 +639,7 @@ function App() {
 
   const handleClick = (row, col) => {
     const piece = board[row][col];
-    const color = piece === '♔' ? 'white' : 'black';
-    const currentState = kingState[color];  
+    const color = piece === '♔' ? 'white' : 'black'; 
 
     // Close open promotion GUIs if open
     if (promotionOptions) {
@@ -944,8 +936,6 @@ function App() {
             const [r, c] = move;
             const target = board[r]?.[c];
             const isEnemy = target && !isSameTeam(piece, target);
-            const startX = selected.col * 105 + 52.5 + 4;
-            const startY = selected.row * 105 + 52.5 + 4;
             const endX = c * 105 + 52.5 + 4;
             const endY = r * 105 + 52.5 + 4;
             if (isEnemy) {
