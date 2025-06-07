@@ -866,6 +866,12 @@ function App() {
 
   // Watch board/turn changes to show check/checkmate/draw messages
   useEffect(() => {
+    if (mode === 'analysis') {
+      setCheckmateInfo(null);
+      setDrawInfo(null);
+      setStatusMessage('');
+      return;
+    }
     const inCheck = isKingInCheck(board, turn);
     const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget, castlingRights);
 
@@ -1951,32 +1957,48 @@ function App() {
 
                 );
               })}
-              {mode === 'analysis' && analysisHistory.map((m, idx) => {
-                let text = '';
-                if (m.castle) {
-                  text = m.castle;
-                } else {
-                  const from = `${String.fromCharCode(97 + m.from.col)}${8 - m.from.row}`;
-                  const to = `${String.fromCharCode(97 + m.to.col)}${8 - m.to.row}`;
-                  text = `${m.piece} ${from}→${to}`;
+              {mode === 'analysis' && (() => {
+                const groups = [];
+                for (let i = 0; i < analysisHistory.length; i += 2) {
+                  groups.push({ first: analysisHistory[i], second: analysisHistory[i + 1], index: i });
                 }
-                if (m.promotion) text += `=${m.promotion}`;
-                if (m.summon) {
-                  const summonTo = `${String.fromCharCode(97 + m.summon.to.col)}${8 - m.summon.to.row}`;
-                  text += `+${m.summon.piece}${summonTo}`;
-                }
-                const isBold = analysisIndex === idx;
-                return (
-                  <li key={`a${idx}`} style={{ marginBottom: '4px' }}>
-                    <span
-                      onClick={() => jumpToMove(idx)}
-                      style={{ fontWeight: isBold ? 'bold' : 'normal', cursor: 'pointer' }}
-                    >
-                       🧪 {text}
-                    </span>
-                  </li>
-                );
-              })}
+                const renderMoveText = (m) => {
+                  if (!m) return '';
+                  let t = '';
+                  if (m.castle) {
+                    t = m.castle;
+                  } else {
+                    const from = `${String.fromCharCode(97 + m.from.col)}${8 - m.from.row}`;
+                    const to = `${String.fromCharCode(97 + m.to.col)}${8 - m.to.row}`;
+                    t = `${m.piece} ${from}→${to}`;
+                  }
+                  if (m.promotion) t += `=${m.promotion}`;
+                  if (m.summon) {
+                    const summonTo = `${String.fromCharCode(97 + m.summon.to.col)}${8 - m.summon.to.row}`;
+                    t += `+${m.summon.piece}${summonTo}`;
+                  }
+                  return t;
+                };
+                return groups.map((g, i) => {
+                  const firstText = renderMoveText(g.first);
+                  const secondText = renderMoveText(g.second);
+                  const firstLabel = g.first ? (g.first.turn === 'white' ? 'W:' : 'B:') : '';
+                  const secondLabel = g.second ? (g.second.turn === 'white' ? 'W:' : 'B:') : '';
+                  const isBold = analysisIndex === g.index || analysisIndex === g.index + 1;
+                  return (
+                    <li key={`a${i}`} style={{ marginBottom: '4px' }}>
+                      <span
+                        onClick={() => jumpToMove(g.index)}
+                        style={{ fontWeight: isBold ? 'bold' : 'normal', cursor: 'pointer' }}
+                      >
+                        🧪 {firstLabel} {firstText}
+                        {g.second && `  ${secondLabel} ${secondText}`}
+                      </span>
+                    </li>
+                  );
+                });
+              })()}
+              
             </ol>
 
           </div>
