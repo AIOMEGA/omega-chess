@@ -687,6 +687,10 @@ function App() {
   // Ref tracking right-click drag state
   const rightDragRef = useRef({ dragging: false });
 
+  const bcRef = useRef(null);
+  const instanceIdRef = useRef(Math.random().toString(36).slice(2));
+  const suppressRef = useRef(false);
+
   const squareSize = 105;
   const boardOffset = 4; // matches board border
 
@@ -758,7 +762,25 @@ function App() {
   };
   
   // --- Analysis mode ---
-  const playerColor = 'white'; // TODO: replace with actual player color
+  const [playerColor, setPlayerColor] = useState('white');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlColor = params.get('color');
+    if (urlColor === 'white' || urlColor === 'black') {
+      setPlayerColor(urlColor);
+      localStorage.setItem('playerColor', urlColor);
+      return;
+    }
+    const stored = localStorage.getItem('playerColor');
+    if (stored === 'white' || stored === 'black') {
+      setPlayerColor(stored);
+      return;
+    }
+    const random = Math.random() < 0.5 ? 'white' : 'black';
+    setPlayerColor(random);
+    localStorage.setItem('playerColor', random);
+  }, []);
   const [mode, setMode] = useState('play'); // 'play' or 'analysis'
   const [analysisHistory, setAnalysisHistory] = useState([]);
   const [analysisIndex, setAnalysisIndex] = useState(-1);
@@ -828,6 +850,9 @@ function App() {
     setMoveHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
 
+    if (!suppressRef.current) {
+      bcRef.current?.postMessage({ type: 'move', move, senderId: instanceIdRef.current });
+    }
     if (mode !== 'analysis') {
       const isPawnMove = move.piece === '♙' || move.piece === '♟';
       const isCapture = !!move.captured;
@@ -1414,8 +1439,34 @@ function App() {
     );
     positionCountsRef.current = { [key]: 1 };
     // console.log('boardKey', key, 'count', 1);
+    if (!suppressRef.current) {
+      bcRef.current?.postMessage({ type: 'reset', senderId: instanceIdRef.current });
+    }
   };
   
+  useEffect(() => {
+    const bc = new BroadcastChannel('omega-chess');
+    bcRef.current = bc;
+    bc.onmessage = (event) => {
+      const { type, move, senderId } = event.data;
+      if (senderId === instanceIdRef.current) return;
+      if (type === 'move') {
+        suppressRef.current = true;
+        setBoard(cloneBoard(move.board));
+        setTurn(move.turn === 'white' ? 'black' : 'white');
+        if (move.kingState) setKingState(deepClone(move.kingState));
+        if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
+        setEnPassantTarget(move.enPassantTarget || null);
+        recordMove(move);
+        suppressRef.current = false;
+      } else if (type === 'reset') {
+        suppressRef.current = true;
+        resetGame();
+        suppressRef.current = false;
+      }
+    };
+    return () => bc.close();
+  }, []);
 
   return (
     <div style={{ position: 'relative' }}>
