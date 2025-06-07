@@ -690,6 +690,7 @@ function App() {
   const bcRef = useRef(null);
   const instanceIdRef = useRef(Math.random().toString(36).slice(2));
   const suppressRef = useRef(false);
+  const recordMoveRef = useRef(null); // holds latest recordMove implementation
 
   const squareSize = 105;
   const boardOffset = 4; // matches board border
@@ -879,6 +880,12 @@ function App() {
       }
     }
   };
+
+  // Keep a ref to the latest recordMove so BroadcastChannel handler
+  // always invokes the current logic even though it was bound once
+  useEffect(() => {
+    recordMoveRef.current = recordMove;
+  });
 
   // --- Hooks ---
   // Ref so we can auto-scroll the move list when new moves are added
@@ -1443,7 +1450,7 @@ function App() {
       bcRef.current?.postMessage({ type: 'reset', senderId: instanceIdRef.current });
     }
   };
-  
+
   useEffect(() => {
     const bc = new BroadcastChannel('omega-chess');
     bcRef.current = bc;
@@ -1457,7 +1464,7 @@ function App() {
         if (move.kingState) setKingState(deepClone(move.kingState));
         if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
         setEnPassantTarget(move.enPassantTarget || null);
-        recordMove(move);
+        if (recordMoveRef.current) recordMoveRef.current(move);
         suppressRef.current = false;
       } else if (type === 'reset') {
         suppressRef.current = true;
