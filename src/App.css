@@ -20,6 +20,10 @@ body {
   overflow: visible;
 }
 
+.board.analysis {
+  filter: grayscale(0.5);
+}
+
 .row {
   display: flex;
   flex: 1;

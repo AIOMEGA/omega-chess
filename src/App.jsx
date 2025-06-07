@@ -757,6 +757,50 @@ function App() {
     rightDragRef.current.dragging = false;
   };
   
+  // --- Analysis mode ---
+  const playerColor = 'white'; // TODO: replace with actual player color
+  const [mode, setMode] = useState('play'); // 'play' or 'analysis'
+  const [analysisHistory, setAnalysisHistory] = useState([]);
+  const [analysisIndex, setAnalysisIndex] = useState(-1);
+  const analysisSavedRef = useRef(null);
+
+  const activateAnalysis = (sel) => {
+    if (mode === 'analysis') return;
+    analysisSavedRef.current = {
+      board: cloneBoard(board),
+      turn,
+      kingState: deepClone(kingState),
+      enPassantTarget,
+      castlingRights: deepClone(castlingRights),
+      lastKingMove,
+    };
+    setBoard(cloneBoard(board));
+    setKingState(deepClone(kingState));
+    setCastlingRights(deepClone(castlingRights));
+    setEnPassantTarget(enPassantTarget ? { ...enPassantTarget } : null);
+    setLastKingMove(lastKingMove ? { ...lastKingMove } : null);
+    setMode('analysis');
+    setAnalysisHistory([]);
+    setAnalysisIndex(-1);
+    setSelected(sel);
+  };
+
+  const deactivateAnalysis = () => {
+    if (mode !== 'analysis') return;
+    const saved = analysisSavedRef.current;
+    if (saved) {
+      setBoard(saved.board);
+      setTurn(saved.turn);
+      setKingState(deepClone(saved.kingState));
+      setCastlingRights(deepClone(saved.castlingRights));
+      setEnPassantTarget(saved.enPassantTarget || null);
+      setLastKingMove(saved.lastKingMove || null);
+    }
+    setMode('play');
+    setAnalysisHistory([]);
+    setAnalysisIndex(-1);
+    setSelected(null);
+  };
   
   useEffect(() => {
     const key = boardKey(
@@ -772,33 +816,42 @@ function App() {
   // Helper to push a move onto the history stack. If we have undone moves,
   // they are sliced off before the new move is appended.
   const recordMove = (move) => {
+    if (mode === 'analysis') {
+      const newHistory = analysisHistory.slice(0, analysisIndex + 1);
+      newHistory.push(move);
+      setAnalysisHistory(newHistory);
+      setAnalysisIndex(newHistory.length - 1);
+      return;
+    }
     const newHistory = moveHistory.slice(0, historyIndex + 1);
     newHistory.push(move);
     setMoveHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
 
-    const isPawnMove = move.piece === '♙' || move.piece === '♟';
-    const isCapture = !!move.captured;
-    setHalfmoveClock((hc) => {
-      const newClock = isPawnMove || isCapture ? 0 : hc + 1;
-      if (newClock >= 100) {
-        setDrawInfo({ type: 'fifty', message: 'Draw by fifty-move rule.' });
-      }
-      return newClock;
-    });
+    if (mode !== 'analysis') {
+      const isPawnMove = move.piece === '♙' || move.piece === '♟';
+      const isCapture = !!move.captured;
+      setHalfmoveClock((hc) => {
+        const newClock = isPawnMove || isCapture ? 0 : hc + 1;
+        if (newClock >= 100) {
+          setDrawInfo({ type: 'fifty', message: 'Draw by fifty-move rule.' });
+        }
+        return newClock;
+      });
 
-    const key = boardKey(
-      move.board,
-      move.turn === 'white' ? 'black' : 'white',
-      move.castlingRights,
-      move.enPassantTarget
-    );
-    const counts = positionCountsRef.current;
-    const count = (counts[key] || 0) + 1;
-    counts[key] = count;
-    // console.log('boardKey', key, 'count', count);
-    if (count >= 3) {
-      setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
+      const key = boardKey(
+        move.board,
+        move.turn === 'white' ? 'black' : 'white',
+        move.castlingRights,
+        move.enPassantTarget
+      );
+      const counts = positionCountsRef.current;
+      const count = (counts[key] || 0) + 1;
+      counts[key] = count;
+      // console.log('boardKey', key, 'count', count);
+      if (count >= 3) {
+        setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
+      }
     }
   };
 
@@ -809,10 +862,16 @@ function App() {
     if (moveListRef.current) {
       moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
     }
-  }, [historyIndex]);
+  }, [historyIndex, analysisIndex, mode]);
 
   // Watch board/turn changes to show check/checkmate/draw messages
   useEffect(() => {
+    if (mode === 'analysis') {
+      setCheckmateInfo(null);
+      setDrawInfo(null);
+      setStatusMessage('');
+      return;
+    }
     const inCheck = isKingInCheck(board, turn);
     const hasMoves = hasAnyLegalMoves(board, turn, kingState, enPassantTarget, castlingRights);
 
@@ -838,6 +897,27 @@ function App() {
   }, [board, turn]);
 
   const undoMove = () => {
+    if (mode === 'analysis') {
+      if (analysisIndex < 0) return;
+      const newIndex = analysisIndex - 1;
+      if (newIndex >= 0) {
+        const prev = analysisHistory[newIndex];
+        setBoard(prev.board);
+        setTurn(prev.turn === 'white' ? 'black' : 'white');
+        if (prev.kingState) setKingState(deepClone(prev.kingState));
+        if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
+        setEnPassantTarget(prev.enPassantTarget || null);
+      } else if (analysisSavedRef.current) {
+        setBoard(cloneBoard(analysisSavedRef.current.board));
+        setTurn(analysisSavedRef.current.turn);
+        setKingState(deepClone(analysisSavedRef.current.kingState));
+        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
+        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
+      }
+      setAnalysisIndex(newIndex);
+      return;
+    }
+
     if (historyIndex < 0) return;
     const newIndex = historyIndex - 1;
   
@@ -871,6 +951,19 @@ function App() {
   };
   
   const redoMove = () => {
+    if (mode === 'analysis') {
+      if (analysisIndex >= analysisHistory.length - 1) return;
+      const newIndex = analysisIndex + 1;
+      const next = analysisHistory[newIndex];
+      setBoard(next.board);
+      setTurn(next.turn === 'white' ? 'black' : 'white');
+      if (next.kingState) setKingState(deepClone(next.kingState));
+      if (next.castlingRights) setCastlingRights(deepClone(next.castlingRights));
+      setEnPassantTarget(next.enPassantTarget || null);
+      setAnalysisIndex(newIndex);
+      return;
+    }
+
     if (historyIndex >= moveHistory.length - 1) return;
     const newIndex = historyIndex + 1;
     const next = moveHistory[newIndex];
@@ -887,6 +980,25 @@ function App() {
   };
 
   const jumpToMove = (index) => {
+    if (mode === 'analysis') {
+      const move = analysisHistory[index];
+      if (move) {
+        setBoard(move.board);
+        setTurn(move.turn === 'white' ? 'black' : 'white');
+        if (move.kingState) setKingState(deepClone(move.kingState));
+        if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
+        setEnPassantTarget(move.enPassantTarget || null);
+      } else if (analysisSavedRef.current) {
+        setBoard(cloneBoard(analysisSavedRef.current.board));
+        setTurn(analysisSavedRef.current.turn);
+        setKingState(deepClone(analysisSavedRef.current.kingState));
+        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
+        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
+      }
+      setAnalysisIndex(index);
+      return;
+    }
+    
     const move = moveHistory[index];
     if (move) {
       setBoard(move.board);
@@ -912,7 +1024,7 @@ function App() {
       });
     }
     setHistoryIndex(index);
-  };  
+  };
   
   const pieceImagesMap = {
     white: {
@@ -935,7 +1047,9 @@ function App() {
     : ['♛', '♞', '♜', '♝'];
 
   // --- Highlight helpers ---
-  const lastMove = historyIndex >= 0 ? moveHistory[historyIndex] : null;
+  const activeHist = mode === 'analysis' ? analysisHistory : moveHistory;
+  const activeIndex = mode === 'analysis' ? analysisIndex : historyIndex;
+  const lastMove = activeIndex >= 0 ? activeHist[activeIndex] : null;
   const lastFromKey = lastMove ? `${lastMove.from.row}-${lastMove.from.col}` : null;
   const lastToKey = lastMove ? `${lastMove.to.row}-${lastMove.to.col}` : null;
 
@@ -955,6 +1069,11 @@ function App() {
   // them, triggering promotions and summoning UIs as well as castling logic.
   const handleClick = (row, col) => {
     const piece = board[row][col];
+
+    if (mode === 'play' && turn !== playerColor && piece !== '' && ((turn === 'white' && isWhitePiece(piece)) || (turn === 'black' && isBlackPiece(piece)))) {
+      activateAnalysis({ row, col });
+      return;
+    }
 
     // Close open promotion GUIs if open
     if (promotionOptions) {
@@ -1655,7 +1774,7 @@ function App() {
           }}
         >
           {/* Your board rendering below */}
-          <div className="board" style={{ zIndex: 1, position: 'relative' }}>
+          <div className={`board${mode === 'analysis' ? ' analysis' : ''}`} style={{ zIndex: 1, position: 'relative' }}>
             {board.map((rowArr, row) => (
               <div key={row} className="row">
                 {rowArr.map((piece, col) => {
@@ -1735,10 +1854,13 @@ function App() {
         {/* Right: Sidebar */}
         <div style={{ width: '200px', color: 'white' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-            <button onClick={undoMove} disabled={historyIndex < 0}>Undo</button>
-            <button onClick={redoMove} disabled={historyIndex >= moveHistory.length - 1}>Redo</button>
+            <button onClick={undoMove} disabled={(mode === 'analysis' ? analysisIndex : historyIndex) < 0}>Undo</button>
+            <button onClick={redoMove} disabled={mode === 'analysis' ? analysisIndex >= analysisHistory.length - 1 : historyIndex >= moveHistory.length - 1}>Redo</button>
             <button onClick={() => setDrawInfo({ type: 'agreement', message: 'Draw by agreement.' })}>Draw</button>
             <button onClick={() => setResignInfo({ winner: turn === 'white' ? 'black' : 'white' })}>Resign</button>
+            {mode === 'analysis' && (
+              <button onClick={deactivateAnalysis}>Exit Analysis</button>
+            )}
           </div>
           <div 
             ref={moveListRef}
@@ -1835,6 +1957,66 @@ function App() {
 
                 );
               })}
+              {mode === 'analysis' && (() => {
+                const groups = [];
+                for (let i = 0; i < analysisHistory.length; i += 2) {
+                  groups.push({ first: analysisHistory[i], second: analysisHistory[i + 1], index: i });
+                }
+
+                const renderMoveText = (m) => {
+                  if (!m) return '';
+                  let t = '';
+                  if (m.castle) {
+                    t = m.castle;
+                  } else {
+                    const from = `${String.fromCharCode(97 + m.from.col)}${8 - m.from.row}`;
+                    const to = `${String.fromCharCode(97 + m.to.col)}${8 - m.to.row}`;
+                    t = `${m.piece} ${from}→${to}`;
+                  }
+                  if (m.promotion) t += `=${m.promotion}`;
+                  if (m.summon) {
+                    const summonTo = `${String.fromCharCode(97 + m.summon.to.col)}${8 - m.summon.to.row}`;
+                    t += `+${m.summon.piece}${summonTo}`;
+                  }
+                  return t;
+                };
+
+                return groups.map((g, i) => {
+                  const firstText = renderMoveText(g.first);
+                  const secondText = renderMoveText(g.second);
+                  const firstLabel = g.first ? (g.first.turn === 'white' ? 'W:' : 'B:') : '';
+                  const secondLabel = g.second ? (g.second.turn === 'white' ? 'W:' : 'B:') : '';
+                  const isFirstBold = analysisIndex === g.index;
+                  const isSecondBold = analysisIndex === g.index + 1;
+
+                  return (
+                    <li key={`a${i}`} style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span
+                        onClick={() => jumpToMove(g.index)}
+                        style={{
+                          fontWeight: isFirstBold ? 'bold' : 'normal',
+                          minWidth: '140px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🧪 {firstLabel} {firstText}
+                      </span>
+                      <span
+                        onClick={() => jumpToMove(g.index + 1)}
+                        style={{
+                          marginLeft: '16px',
+                          fontWeight: isSecondBold ? 'bold' : 'normal',
+                          minWidth: '120px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {secondLabel} {secondText}
+                      </span>
+                    </li>
+                  );
+                });
+              })()}
+              
             </ol>
 
           </div>
