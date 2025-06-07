@@ -1962,6 +1962,7 @@ function App() {
                 for (let i = 0; i < analysisHistory.length; i += 2) {
                   groups.push({ first: analysisHistory[i], second: analysisHistory[i + 1], index: i });
                 }
+
                 const renderMoveText = (m) => {
                   if (!m) return '';
                   let t = '';
@@ -1979,20 +1980,37 @@ function App() {
                   }
                   return t;
                 };
+
                 return groups.map((g, i) => {
                   const firstText = renderMoveText(g.first);
                   const secondText = renderMoveText(g.second);
                   const firstLabel = g.first ? (g.first.turn === 'white' ? 'W:' : 'B:') : '';
                   const secondLabel = g.second ? (g.second.turn === 'white' ? 'W:' : 'B:') : '';
-                  const isBold = analysisIndex === g.index || analysisIndex === g.index + 1;
+                  const isFirstBold = analysisIndex === g.index;
+                  const isSecondBold = analysisIndex === g.index + 1;
+
                   return (
-                    <li key={`a${i}`} style={{ marginBottom: '4px' }}>
+                    <li key={`a${i}`} style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
                       <span
                         onClick={() => jumpToMove(g.index)}
-                        style={{ fontWeight: isBold ? 'bold' : 'normal', cursor: 'pointer' }}
+                        style={{
+                          fontWeight: isFirstBold ? 'bold' : 'normal',
+                          minWidth: '140px',
+                          cursor: 'pointer'
+                        }}
                       >
                         🧪 {firstLabel} {firstText}
-                        {g.second && `  ${secondLabel} ${secondText}`}
+                      </span>
+                      <span
+                        onClick={() => jumpToMove(g.index + 1)}
+                        style={{
+                          marginLeft: '16px',
+                          fontWeight: isSecondBold ? 'bold' : 'normal',
+                          minWidth: '120px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {secondLabel} {secondText}
                       </span>
                     </li>
                   );
