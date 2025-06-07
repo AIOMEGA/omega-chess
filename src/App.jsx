@@ -824,6 +824,18 @@ function App() {
     setAnalysisIndex(-1);
     setSelected(null);
   };
+
+  // Exit analysis without restoring the saved position. Used when
+  // a remote move occurs while the user is in analysis mode so we
+  // can return to play mode and keep the incoming board state.
+  const forceExitAnalysis = () => {
+    if (mode !== 'analysis') return;
+    setMode('play');
+    setAnalysisHistory([]);
+    setAnalysisIndex(-1);
+    setSelected(null);
+    analysisSavedRef.current = null;
+  };
   
   useEffect(() => {
     const key = boardKey(
@@ -838,8 +850,8 @@ function App() {
 
   // Helper to push a move onto the history stack. If we have undone moves,
   // they are sliced off before the new move is appended.
-  const recordMove = (move) => {
-    if (mode === 'analysis') {
+  const recordMove = (move, forcePlay = false) => {
+    if (mode === 'analysis' && !forcePlay) {
       const newHistory = analysisHistory.slice(0, analysisIndex + 1);
       newHistory.push(move);
       setAnalysisHistory(newHistory);
@@ -850,11 +862,12 @@ function App() {
     newHistory.push(move);
     setMoveHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
-
+    
     if (!suppressRef.current) {
       bcRef.current?.postMessage({ type: 'move', move, senderId: instanceIdRef.current });
     }
-    if (mode !== 'analysis') {
+
+    if (mode !== 'analysis' || forcePlay) {
       const isPawnMove = move.piece === '♙' || move.piece === '♟';
       const isCapture = !!move.captured;
       setHalfmoveClock((hc) => {
@@ -1459,15 +1472,21 @@ function App() {
       if (senderId === instanceIdRef.current) return;
       if (type === 'move') {
         suppressRef.current = true;
+        if (mode === 'analysis') {
+          forceExitAnalysis();
+        }
         setBoard(cloneBoard(move.board));
         setTurn(move.turn === 'white' ? 'black' : 'white');
         if (move.kingState) setKingState(deepClone(move.kingState));
         if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
         setEnPassantTarget(move.enPassantTarget || null);
-        if (recordMoveRef.current) recordMoveRef.current(move);
+        if (recordMoveRef.current) recordMoveRef.current(move, true);
         suppressRef.current = false;
       } else if (type === 'reset') {
         suppressRef.current = true;
+        if (mode === 'analysis') {
+          forceExitAnalysis();
+        }
         resetGame();
         suppressRef.current = false;
       }
