@@ -1686,7 +1686,6 @@ function App() {
     newBoard[row][col] = next;
     setCustomBoard(newBoard);
   };
-  
 
   return (
     <div style={{ position: 'relative' }}>
@@ -2269,7 +2268,6 @@ function App() {
                 })}
               </ol>
             )}
-
           </div>
         </div>
       </div>
