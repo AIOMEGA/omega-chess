@@ -663,6 +663,13 @@ function App() {
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
   // Whose turn it is to move
   const [turn, setTurn] = useState('white');
+  // Mode of play: 'play', 'sandbox', 'review', 'custom'
+  const [mode, setMode] = useState('play');
+  const [sandboxBoard, setSandboxBoard] = useState(null);
+  const [reviewBoard, setReviewBoard] = useState(null);
+  const [customBoard, setCustomBoard] = useState(() =>
+    Array.from({ length: 8 }, () => Array(8).fill(''))
+  );
   // Array of past moves used for undo/redo functionality
   const [moveHistory, setMoveHistory] = useState([]);
   // Index pointer into moveHistory for current view
@@ -935,17 +942,26 @@ function App() {
     : ['♛', '♞', '♜', '♝'];
 
   // --- Highlight helpers ---
+  const activeBoard =
+    mode === 'sandbox'
+      ? sandboxBoard || board
+      : mode === 'review'
+      ? reviewBoard || board
+      : mode === 'custom'
+      ? customBoard
+      : board;
+
   const lastMove = historyIndex >= 0 ? moveHistory[historyIndex] : null;
   const lastFromKey = lastMove ? `${lastMove.from.row}-${lastMove.from.col}` : null;
   const lastToKey = lastMove ? `${lastMove.to.row}-${lastMove.to.col}` : null;
 
   const checkSquares = new Set();
-  const whiteCheck = getCheckingPieces(board, 'white');
+  const whiteCheck = getCheckingPieces(activeBoard, 'white');
   if (whiteCheck) {
     checkSquares.add(`${whiteCheck.king.row}-${whiteCheck.king.col}`);
     whiteCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
   }
-  const blackCheck = getCheckingPieces(board, 'black');
+  const blackCheck = getCheckingPieces(activeBoard, 'black');
   if (blackCheck) {
     checkSquares.add(`${blackCheck.king.row}-${blackCheck.king.col}`);
     blackCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
@@ -954,6 +970,19 @@ function App() {
   // Main click handler for board squares. Handles selecting pieces, moving
   // them, triggering promotions and summoning UIs as well as castling logic.
   const handleClick = (row, col) => {
+    if (mode === 'sandbox') {
+      handleSandboxClick(row, col);
+      return;
+    }
+    if (mode === 'review') {
+      handleReviewClick(row, col);
+      return;
+    }
+    if (mode === 'custom') {
+      handleCustomClick(row, col);
+      return;
+    }
+
     const piece = board[row][col];
 
     // Close open promotion GUIs if open
@@ -1295,6 +1324,81 @@ function App() {
     );
     positionCountsRef.current = { [key]: 1 };
     // console.log('boardKey', key, 'count', 1);
+  };
+
+  const toggleSandbox = () => {
+    if (mode === 'sandbox') {
+      setMode('play');
+      setSandboxBoard(null);
+      setSelected(null);
+    } else {
+      setSandboxBoard(cloneBoard(board));
+      setMode('sandbox');
+      setSelected(null);
+    }
+  };
+
+  const toggleReview = () => {
+    const gameOver = checkmateInfo || drawInfo || resignInfo;
+    if (!gameOver && mode !== 'review') return;
+    if (mode === 'review') {
+      setMode('play');
+      setReviewBoard(null);
+      setSelected(null);
+    } else {
+      setReviewBoard(cloneBoard(board));
+      setMode('review');
+      setSelected(null);
+    }
+  };
+
+  const toggleCustom = () => {
+    if (mode === 'custom') {
+      setMode('play');
+      setSelected(null);
+    } else {
+      setCustomBoard(Array.from({ length: 8 }, () => Array(8).fill('')));
+      setMode('custom');
+      setSelected(null);
+    }
+  };
+
+  const handleSandboxClick = (row, col) => {
+    if (!sandboxBoard) return;
+    const piece = sandboxBoard[row][col];
+    if (!selected) {
+      if (piece) setSelected({ row, col });
+      return;
+    }
+    const newBoard = cloneBoard(sandboxBoard);
+    newBoard[row][col] = newBoard[selected.row][selected.col];
+    newBoard[selected.row][selected.col] = '';
+    setSandboxBoard(newBoard);
+    setSelected(null);
+  };
+
+  const handleReviewClick = (row, col) => {
+    if (!reviewBoard) return;
+    const piece = reviewBoard[row][col];
+    if (!selected) {
+      if (piece) setSelected({ row, col });
+      return;
+    }
+    const newBoard = cloneBoard(reviewBoard);
+    newBoard[row][col] = newBoard[selected.row][selected.col];
+    newBoard[selected.row][selected.col] = '';
+    setReviewBoard(newBoard);
+    setSelected(null);
+  };
+
+  const pieceCycle = ['','♙','♟','♘','♞','♗','♝','♖','♜','♕','♛','♔','♚'];
+  const handleCustomClick = (row, col) => {
+    const current = customBoard[row][col];
+    const index = pieceCycle.indexOf(current);
+    const next = pieceCycle[(index + 1) % pieceCycle.length];
+    const newBoard = cloneBoard(customBoard);
+    newBoard[row][col] = next;
+    setCustomBoard(newBoard);
   };
   
 
@@ -1655,8 +1759,19 @@ function App() {
           }}
         >
           {/* Your board rendering below */}
-          <div className="board" style={{ zIndex: 1, position: 'relative' }}>
-            {board.map((rowArr, row) => (
+          <div
+            className={`board${
+              mode === 'sandbox'
+                ? ' sandbox-active'
+                : mode === 'review'
+                ? ' review-active'
+                : mode === 'custom'
+                ? ' custom-active'
+                : ''
+            }`}
+            style={{ zIndex: 1, position: 'relative' }}
+          >
+            {activeBoard.map((rowArr, row) => (
               <div key={row} className="row">
                 {rowArr.map((piece, col) => {
                   const isDark = (row + col) % 2 === 1;
@@ -1739,6 +1854,9 @@ function App() {
             <button onClick={redoMove} disabled={historyIndex >= moveHistory.length - 1}>Redo</button>
             <button onClick={() => setDrawInfo({ type: 'agreement', message: 'Draw by agreement.' })}>Draw</button>
             <button onClick={() => setResignInfo({ winner: turn === 'white' ? 'black' : 'white' })}>Resign</button>
+            <button onClick={toggleSandbox}>{mode === 'sandbox' ? 'Exit Sandbox' : 'Sandbox Mode'}</button>
+            <button onClick={toggleReview} disabled={!(checkmateInfo || drawInfo || resignInfo) && mode !== 'review'}>{mode === 'review' ? 'Exit Review' : 'Review Mode'}</button>
+            <button onClick={toggleCustom}>{mode === 'custom' ? 'Exit Setup' : 'Custom Setup'}</button>
           </div>
           <div 
             ref={moveListRef}
