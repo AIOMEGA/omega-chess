@@ -666,6 +666,7 @@ function App() {
   // Mode of play: 'play', 'sandbox', 'review', 'custom'
   const [mode, setMode] = useState('play');
   const [sandboxBoard, setSandboxBoard] = useState(null);
+  const [sandboxMoves, setSandboxMoves] = useState([]);
   const [reviewBoard, setReviewBoard] = useState(null);
   const [customBoard, setCustomBoard] = useState(() =>
     Array.from({ length: 8 }, () => Array(8).fill(''))
@@ -1025,6 +1026,8 @@ function App() {
         const pieceIsWhite = isWhitePiece(piece);
         if ((turn === 'white' && pieceIsWhite) || (turn === 'black' && !pieceIsWhite)) {
           setSelected({ row, col });
+        } else {
+          startSandbox(row, col);
         }
       }
       return;
@@ -1330,12 +1333,21 @@ function App() {
     if (mode === 'sandbox') {
       setMode('play');
       setSandboxBoard(null);
+      setSandboxMoves([]);
       setSelected(null);
     } else {
       setSandboxBoard(cloneBoard(board));
+      setSandboxMoves([]);
       setMode('sandbox');
       setSelected(null);
     }
+  };
+
+  const startSandbox = (row, col) => {
+    setSandboxBoard(cloneBoard(board));
+    setSandboxMoves([]);
+    setMode('sandbox');
+    setSelected({ row, col });
   };
 
   const toggleReview = () => {
@@ -1371,9 +1383,14 @@ function App() {
       return;
     }
     const newBoard = cloneBoard(sandboxBoard);
-    newBoard[row][col] = newBoard[selected.row][selected.col];
+    const movedPiece = newBoard[selected.row][selected.col];
+    newBoard[row][col] = movedPiece;
     newBoard[selected.row][selected.col] = '';
     setSandboxBoard(newBoard);
+    setSandboxMoves(prev => [
+      ...prev,
+      { from: selected, to: { row, col }, piece: movedPiece }
+    ]);
     setSelected(null);
   };
 
@@ -1400,7 +1417,6 @@ function App() {
     newBoard[row][col] = next;
     setCustomBoard(newBoard);
   };
-  
 
   return (
     <div style={{ position: 'relative' }}>
@@ -1412,7 +1428,7 @@ function App() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
               <button onClick={resetGame}>Play Again</button>
-              <button onClick={() => setCheckmateInfo(null)}>Review Game</button>
+              <button onClick={() => { setCheckmateInfo(null); toggleReview(); }}>Review Game</button>
             </div>
           </div>
         </div>
@@ -1425,7 +1441,7 @@ function App() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
               <button onClick={resetGame}>Play Again</button>
-              <button onClick={() => setDrawInfo(null)}>Review Game</button>
+              <button onClick={() => { setDrawInfo(null); toggleReview(); }}>Review Game</button>
             </div>
           </div>
         </div>
@@ -1438,7 +1454,7 @@ function App() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
               <button onClick={resetGame}>Play Again</button>
-              <button onClick={() => setResignInfo(null)}>Review Game</button>
+              <button onClick={() => { setResignInfo(null); toggleReview(); }}>Review Game</button>
             </div>
           </div>
         </div>
@@ -1954,7 +1970,19 @@ function App() {
                 );
               })}
             </ol>
-
+            {sandboxMoves.length > 0 && (
+              <ol style={{ paddingLeft: '20px', listStyle: 'none', marginTop: '8px' }}>
+                {sandboxMoves.map((m, i) => {
+                  const from = `${String.fromCharCode(97 + m.from.col)}${8 - m.from.row}`;
+                  const to = `${String.fromCharCode(97 + m.to.col)}${8 - m.to.row}`;
+                  return (
+                    <li key={i} style={{ marginBottom: '4px' }}>
+                      🧪 {from}→{to}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
           </div>
         </div>
       </div>
