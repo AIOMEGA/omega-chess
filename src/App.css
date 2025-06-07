@@ -20,6 +20,18 @@ body {
   overflow: visible;
 }
 
+.sandbox-active {
+  filter: grayscale(0.6);
+}
+
+.review-active {
+  filter: brightness(1.1);
+}
+
+.custom-active {
+  filter: sepia(0.2);
+}
+
 .row {
   display: flex;
   flex: 1;

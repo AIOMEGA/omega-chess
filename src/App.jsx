@@ -663,6 +663,26 @@ function App() {
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
   // Whose turn it is to move
   const [turn, setTurn] = useState('white');
+  // Mode of play: 'play', 'sandbox', 'review', 'custom'
+  const [mode, setMode] = useState('play');
+  const [sandboxBoard, setSandboxBoard] = useState(null);
+  const [sandboxMoves, setSandboxMoves] = useState([]);
+  const [sandboxHistoryIndex, setSandboxHistoryIndex] = useState(-1);
+  const [sandboxTurn, setSandboxTurn] = useState('white');
+  const [sandboxEnPassant, setSandboxEnPassant] = useState(null);
+  const [sandboxCastling, setSandboxCastling] = useState({
+    white: { kingSide: true, queenSide: true },
+    black: { kingSide: true, queenSide: true },
+  });
+  const [sandboxKingState, setSandboxKingState] = useState({
+    white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+    black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+  });
+  const sandboxStartRef = useRef(null);
+  const [reviewBoard, setReviewBoard] = useState(null);
+  const [customBoard, setCustomBoard] = useState(() =>
+    Array.from({ length: 8 }, () => Array(8).fill(''))
+  );
   // Array of past moves used for undo/redo functionality
   const [moveHistory, setMoveHistory] = useState([]);
   // Index pointer into moveHistory for current view
@@ -802,6 +822,70 @@ function App() {
     }
   };
 
+  const recordSandboxMove = (move) => {
+    const newHistory = sandboxMoves.slice(0, sandboxHistoryIndex + 1);
+    newHistory.push(move);
+    setSandboxMoves(newHistory);
+    setSandboxHistoryIndex(newHistory.length - 1);
+  };
+
+  const undoSandboxMove = () => {
+    if (sandboxHistoryIndex < 0) return;
+    const newIndex = sandboxHistoryIndex - 1;
+    if (newIndex >= 0) {
+      const prev = sandboxMoves[newIndex];
+      setSandboxBoard(prev.board);
+      setSandboxTurn(prev.turn === 'white' ? 'black' : 'white');
+      setSandboxEnPassant(prev.enPassantTarget || null);
+      setSandboxCastling(deepClone(prev.castlingRights));
+      if (prev.kingState) setSandboxKingState(deepClone(prev.kingState));
+    } else if (sandboxStartRef.current) {
+      const start = sandboxStartRef.current;
+      setSandboxBoard(cloneBoard(start.board));
+      setSandboxTurn(start.turn);
+      setSandboxEnPassant(start.enPassantTarget);
+      setSandboxCastling(deepClone(start.castlingRights));
+      setSandboxKingState(deepClone(start.kingState));
+    }
+    setSandboxHistoryIndex(newIndex);
+  };
+
+  const redoSandboxMove = () => {
+    if (sandboxHistoryIndex >= sandboxMoves.length - 1) return;
+    const newIndex = sandboxHistoryIndex + 1;
+    const next = sandboxMoves[newIndex];
+    setSandboxBoard(next.board);
+    setSandboxTurn(next.turn === 'white' ? 'black' : 'white');
+    setSandboxEnPassant(next.enPassantTarget || null);
+    setSandboxCastling(deepClone(next.castlingRights));
+    if (next.kingState) setSandboxKingState(deepClone(next.kingState));
+    setSandboxHistoryIndex(newIndex);
+  };
+
+  const jumpSandboxMove = (index) => {
+    if (index < 0) {
+      if (sandboxStartRef.current) {
+        const start = sandboxStartRef.current;
+        setSandboxBoard(cloneBoard(start.board));
+        setSandboxTurn(start.turn);
+        setSandboxEnPassant(start.enPassantTarget);
+        setSandboxCastling(deepClone(start.castlingRights));
+        setSandboxKingState(deepClone(start.kingState));
+      }
+      setSandboxHistoryIndex(-1);
+      return;
+    }
+    const move = sandboxMoves[index];
+    if (move) {
+      setSandboxBoard(move.board);
+      setSandboxTurn(move.turn === 'white' ? 'black' : 'white');
+      setSandboxEnPassant(move.enPassantTarget || null);
+      setSandboxCastling(deepClone(move.castlingRights));
+      if (move.kingState) setSandboxKingState(deepClone(move.kingState));
+    }
+    setSandboxHistoryIndex(index);
+  };
+
   // --- Hooks ---
   // Ref so we can auto-scroll the move list when new moves are added
   const moveListRef = useRef(null);
@@ -809,7 +893,7 @@ function App() {
     if (moveListRef.current) {
       moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
     }
-  }, [historyIndex]);
+  }, [historyIndex, sandboxHistoryIndex]);
 
   // Watch board/turn changes to show check/checkmate/draw messages
   useEffect(() => {
@@ -838,6 +922,10 @@ function App() {
   }, [board, turn]);
 
   const undoMove = () => {
+    if (mode === 'sandbox') {
+      undoSandboxMove();
+      return;
+    }
     if (historyIndex < 0) return;
     const newIndex = historyIndex - 1;
   
@@ -869,8 +957,12 @@ function App() {
   
     setHistoryIndex(newIndex);
   };
-  
+
   const redoMove = () => {
+    if (mode === 'sandbox') {
+      redoSandboxMove();
+      return;
+    }
     if (historyIndex >= moveHistory.length - 1) return;
     const newIndex = historyIndex + 1;
     const next = moveHistory[newIndex];
@@ -887,6 +979,10 @@ function App() {
   };
 
   const jumpToMove = (index) => {
+    if (mode === 'sandbox') {
+      jumpSandboxMove(index);
+      return;
+    }
     const move = moveHistory[index];
     if (move) {
       setBoard(move.board);
@@ -935,17 +1031,33 @@ function App() {
     : ['♛', '♞', '♜', '♝'];
 
   // --- Highlight helpers ---
-  const lastMove = historyIndex >= 0 ? moveHistory[historyIndex] : null;
+  const activeBoard =
+    mode === 'sandbox'
+      ? sandboxBoard || board
+      : mode === 'review'
+      ? reviewBoard || board
+      : mode === 'custom'
+      ? customBoard
+      : board;
+
+  const lastMove =
+    mode === 'sandbox'
+      ? sandboxHistoryIndex >= 0
+        ? sandboxMoves[sandboxHistoryIndex]
+        : null
+      : historyIndex >= 0
+      ? moveHistory[historyIndex]
+      : null;
   const lastFromKey = lastMove ? `${lastMove.from.row}-${lastMove.from.col}` : null;
   const lastToKey = lastMove ? `${lastMove.to.row}-${lastMove.to.col}` : null;
 
   const checkSquares = new Set();
-  const whiteCheck = getCheckingPieces(board, 'white');
+  const whiteCheck = getCheckingPieces(activeBoard, 'white');
   if (whiteCheck) {
     checkSquares.add(`${whiteCheck.king.row}-${whiteCheck.king.col}`);
     whiteCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
   }
-  const blackCheck = getCheckingPieces(board, 'black');
+  const blackCheck = getCheckingPieces(activeBoard, 'black');
   if (blackCheck) {
     checkSquares.add(`${blackCheck.king.row}-${blackCheck.king.col}`);
     blackCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
@@ -954,6 +1066,19 @@ function App() {
   // Main click handler for board squares. Handles selecting pieces, moving
   // them, triggering promotions and summoning UIs as well as castling logic.
   const handleClick = (row, col) => {
+    if (mode === 'sandbox') {
+      handleSandboxClick(row, col);
+      return;
+    }
+    if (mode === 'review') {
+      handleReviewClick(row, col);
+      return;
+    }
+    if (mode === 'custom') {
+      handleCustomClick(row, col);
+      return;
+    }
+
     const piece = board[row][col];
 
     // Close open promotion GUIs if open
@@ -996,6 +1121,8 @@ function App() {
         const pieceIsWhite = isWhitePiece(piece);
         if ((turn === 'white' && pieceIsWhite) || (turn === 'black' && !pieceIsWhite)) {
           setSelected({ row, col });
+        } else {
+          startSandbox(row, col);
         }
       }
       return;
@@ -1296,6 +1423,269 @@ function App() {
     positionCountsRef.current = { [key]: 1 };
     // console.log('boardKey', key, 'count', 1);
   };
+
+  const toggleSandbox = () => {
+    if (mode === 'sandbox') {
+      setMode('play');
+      setSandboxBoard(null);
+      setSandboxMoves([]);
+      setSandboxHistoryIndex(-1);
+      setSelected(null);
+    } else {
+      sandboxStartRef.current = {
+        board: cloneBoard(board),
+        turn,
+        enPassantTarget,
+        castlingRights: deepClone(castlingRights),
+        kingState: deepClone(kingState),
+      };
+      setSandboxBoard(cloneBoard(board));
+      setSandboxTurn(turn);
+      setSandboxMoves([]);
+      setSandboxHistoryIndex(-1);
+      setSandboxEnPassant(enPassantTarget);
+      setSandboxCastling(deepClone(castlingRights));
+      setSandboxKingState(deepClone(kingState));
+      setMode('sandbox');
+      setSelected(null);
+    }
+  };
+
+  const startSandbox = (row, col) => {
+    sandboxStartRef.current = {
+      board: cloneBoard(board),
+      turn,
+      enPassantTarget,
+      castlingRights: deepClone(castlingRights),
+      kingState: deepClone(kingState),
+    };
+    setSandboxBoard(cloneBoard(board));
+    setSandboxTurn(turn);
+    setSandboxMoves([]);
+    setSandboxHistoryIndex(-1);
+    setSandboxEnPassant(enPassantTarget);
+    setSandboxCastling(deepClone(castlingRights));
+    setSandboxKingState(deepClone(kingState));
+    setMode('sandbox');
+    setSelected({ row, col });
+  };
+
+  const toggleReview = () => {
+    const gameOver = checkmateInfo || drawInfo || resignInfo;
+    if (!gameOver && mode !== 'review') return;
+    if (mode === 'review') {
+      setMode('play');
+      setReviewBoard(null);
+      setSelected(null);
+    } else {
+      setReviewBoard(cloneBoard(board));
+      setMode('review');
+      setSelected(null);
+    }
+  };
+
+  const toggleCustom = () => {
+    if (mode === 'custom') {
+      setMode('play');
+      setSelected(null);
+    } else {
+      setCustomBoard(Array.from({ length: 8 }, () => Array(8).fill('')));
+      setMode('custom');
+      setSelected(null);
+    }
+  };
+
+  const handleSandboxClick = (row, col) => {
+    if (!sandboxBoard) return;
+    const piece = sandboxBoard[row][col];
+
+    if (!selected) {
+      if (
+        piece &&
+        ((sandboxTurn === 'white' && isWhitePiece(piece)) ||
+          (sandboxTurn === 'black' && !isWhitePiece(piece)))
+      ) {
+        setSelected({ row, col });
+      }
+      return;
+    }
+
+    const selectedPiece = sandboxBoard[selected.row][selected.col];
+    const targetPiece = piece;
+
+    if (targetPiece && isSameTeam(selectedPiece, targetPiece)) {
+      setSelected({ row, col });
+      return;
+    }
+
+    let validMoves = [];
+    if (selectedPiece === '♙' || selectedPiece === '♟') {
+      validMoves = getValidPawnMoves(
+        sandboxBoard,
+        selected.row,
+        selected.col,
+        selectedPiece,
+        sandboxEnPassant
+      );
+    } else if (selectedPiece === '♖' || selectedPiece === '♜') {
+      validMoves = getValidRookMoves(sandboxBoard, selected.row, selected.col, selectedPiece);
+    } else if (selectedPiece === '♕' || selectedPiece === '♛') {
+      validMoves = getValidQueenMoves(sandboxBoard, selected.row, selected.col, selectedPiece);
+    } else if (selectedPiece === '♘' || selectedPiece === '♞') {
+      validMoves = getValidKnightMoves(sandboxBoard, selected.row, selected.col, selectedPiece);
+    } else if (selectedPiece === '♗' || selectedPiece === '♝') {
+      validMoves = getValidBishopMoves(sandboxBoard, selected.row, selected.col, selectedPiece);
+    } else if (selectedPiece === '♔' || selectedPiece === '♚') {
+      validMoves = getValidKingMoves(
+        sandboxBoard,
+        selected.row,
+        selected.col,
+        selectedPiece,
+        sandboxKingState,
+        sandboxCastling
+      );
+    }
+
+    validMoves = filterLegalMoves(
+      validMoves,
+      sandboxBoard,
+      selected.row,
+      selected.col,
+      selectedPiece,
+      sandboxEnPassant
+    );
+
+    const isValid = validMoves.some(([r, c]) => r === row && c === col);
+    if (!isValid) {
+      setSelected(null);
+      return;
+    }
+
+    const newBoard = cloneBoard(sandboxBoard);
+    const movedPiece = selectedPiece;
+    const isPawn = movedPiece === '♙' || movedPiece === '♟';
+    let newEnPassant = null;
+
+    if (
+      isPawn &&
+      sandboxEnPassant &&
+      row === sandboxEnPassant.row &&
+      col === sandboxEnPassant.col
+    ) {
+      const capRow = movedPiece === '♙' ? row + 1 : row - 1;
+      newBoard[capRow][col] = '';
+    }
+
+    if (isPawn && Math.abs(row - selected.row) === 2) {
+      newEnPassant = { row: (row + selected.row) / 2, col };
+    }
+
+    if (
+      (movedPiece === '♔' || movedPiece === '♚') &&
+      Math.abs(col - selected.col) === 2 &&
+      row === selected.row
+    ) {
+      const isWhite = movedPiece === '♔';
+      const kingSide = col > selected.col;
+      const rookFromCol = kingSide ? 7 : 0;
+      const rookToCol = kingSide ? col - 1 : col + 1;
+      newBoard[row][col] = movedPiece;
+      newBoard[selected.row][selected.col] = '';
+      newBoard[row][rookFromCol] = '';
+      newBoard[row][rookToCol] = isWhite ? '♖' : '♜';
+      const updatedRights = {
+        ...sandboxCastling,
+        [isWhite ? 'white' : 'black']: { kingSide: false, queenSide: false },
+      };
+      setSandboxCastling(updatedRights);
+      setSandboxEnPassant(null);
+      setSandboxBoard(newBoard);
+      recordSandboxMove({
+        from: { row: selected.row, col: selected.col },
+        to: { row, col },
+        piece: movedPiece,
+        castle: kingSide ? 'O-O' : 'O-O-O',
+        board: cloneBoard(newBoard),
+        turn: sandboxTurn,
+        castlingRights: deepClone(updatedRights),
+        enPassantTarget: null,
+        kingState: deepClone(sandboxKingState),
+      });
+      setSandboxTurn((t) => (t === 'white' ? 'black' : 'white'));
+      setSelected(null);
+      return;
+    }
+
+    newBoard[row][col] = movedPiece;
+    newBoard[selected.row][selected.col] = '';
+
+    const updatedRights = { ...sandboxCastling };
+    if (movedPiece === '♔') {
+      updatedRights.white.kingSide = false;
+      updatedRights.white.queenSide = false;
+    } else if (movedPiece === '♚') {
+      updatedRights.black.kingSide = false;
+      updatedRights.black.queenSide = false;
+    } else if (movedPiece === '♖' && selected.row === 7 && selected.col === 0) {
+      updatedRights.white.queenSide = false;
+    } else if (movedPiece === '♖' && selected.row === 7 && selected.col === 7) {
+      updatedRights.white.kingSide = false;
+    } else if (movedPiece === '♜' && selected.row === 0 && selected.col === 0) {
+      updatedRights.black.queenSide = false;
+    } else if (movedPiece === '♜' && selected.row === 0 && selected.col === 7) {
+      updatedRights.black.kingSide = false;
+    }
+    if (targetPiece === '♖') {
+      if (row === 7 && col === 0) updatedRights.white.queenSide = false;
+      if (row === 7 && col === 7) updatedRights.white.kingSide = false;
+    } else if (targetPiece === '♜') {
+      if (row === 0 && col === 0) updatedRights.black.queenSide = false;
+      if (row === 0 && col === 7) updatedRights.black.kingSide = false;
+    }
+
+    setSandboxCastling(updatedRights);
+    setSandboxBoard(newBoard);
+    setSandboxEnPassant(newEnPassant);
+
+    recordSandboxMove({
+      from: { row: selected.row, col: selected.col },
+      to: { row, col },
+      piece: movedPiece,
+      captured: targetPiece || null,
+      board: cloneBoard(newBoard),
+      turn: sandboxTurn,
+      castlingRights: deepClone(updatedRights),
+      enPassantTarget: newEnPassant,
+      kingState: deepClone(sandboxKingState),
+    });
+
+    setSandboxTurn((t) => (t === 'white' ? 'black' : 'white'));
+    setSelected(null);
+  };
+
+  const handleReviewClick = (row, col) => {
+    if (!reviewBoard) return;
+    const piece = reviewBoard[row][col];
+    if (!selected) {
+      if (piece) setSelected({ row, col });
+      return;
+    }
+    const newBoard = cloneBoard(reviewBoard);
+    newBoard[row][col] = newBoard[selected.row][selected.col];
+    newBoard[selected.row][selected.col] = '';
+    setReviewBoard(newBoard);
+    setSelected(null);
+  };
+
+  const pieceCycle = ['','♙','♟','♘','♞','♗','♝','♖','♜','♕','♛','♔','♚'];
+  const handleCustomClick = (row, col) => {
+    const current = customBoard[row][col];
+    const index = pieceCycle.indexOf(current);
+    const next = pieceCycle[(index + 1) % pieceCycle.length];
+    const newBoard = cloneBoard(customBoard);
+    newBoard[row][col] = next;
+    setCustomBoard(newBoard);
+  };
   
 
   return (
@@ -1308,7 +1698,7 @@ function App() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
               <button onClick={resetGame}>Play Again</button>
-              <button onClick={() => setCheckmateInfo(null)}>Review Game</button>
+              <button onClick={() => { setCheckmateInfo(null); toggleReview(); }}>Review Game</button>
             </div>
           </div>
         </div>
@@ -1321,7 +1711,7 @@ function App() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
               <button onClick={resetGame}>Play Again</button>
-              <button onClick={() => setDrawInfo(null)}>Review Game</button>
+              <button onClick={() => { setDrawInfo(null); toggleReview(); }}>Review Game</button>
             </div>
           </div>
         </div>
@@ -1334,7 +1724,7 @@ function App() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
               <button onClick={resetGame}>Play Again</button>
-              <button onClick={() => setResignInfo(null)}>Review Game</button>
+              <button onClick={() => { setResignInfo(null); toggleReview(); }}>Review Game</button>
             </div>
           </div>
         </div>
@@ -1655,8 +2045,19 @@ function App() {
           }}
         >
           {/* Your board rendering below */}
-          <div className="board" style={{ zIndex: 1, position: 'relative' }}>
-            {board.map((rowArr, row) => (
+          <div
+            className={`board${
+              mode === 'sandbox'
+                ? ' sandbox-active'
+                : mode === 'review'
+                ? ' review-active'
+                : mode === 'custom'
+                ? ' custom-active'
+                : ''
+            }`}
+            style={{ zIndex: 1, position: 'relative' }}
+          >
+            {activeBoard.map((rowArr, row) => (
               <div key={row} className="row">
                 {rowArr.map((piece, col) => {
                   const isDark = (row + col) % 2 === 1;
@@ -1735,10 +2136,23 @@ function App() {
         {/* Right: Sidebar */}
         <div style={{ width: '200px', color: 'white' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-            <button onClick={undoMove} disabled={historyIndex < 0}>Undo</button>
-            <button onClick={redoMove} disabled={historyIndex >= moveHistory.length - 1}>Redo</button>
+            <button
+              onClick={undoMove}
+              disabled={mode === 'sandbox' ? sandboxHistoryIndex < 0 : historyIndex < 0}
+            >
+              Undo
+            </button>
+            <button
+              onClick={redoMove}
+              disabled={mode === 'sandbox' ? sandboxHistoryIndex >= sandboxMoves.length - 1 : historyIndex >= moveHistory.length - 1}
+            >
+              Redo
+            </button>
             <button onClick={() => setDrawInfo({ type: 'agreement', message: 'Draw by agreement.' })}>Draw</button>
             <button onClick={() => setResignInfo({ winner: turn === 'white' ? 'black' : 'white' })}>Resign</button>
+            <button onClick={toggleSandbox}>{mode === 'sandbox' ? 'Exit Sandbox' : 'Sandbox Mode'}</button>
+            <button onClick={toggleReview} disabled={!(checkmateInfo || drawInfo || resignInfo) && mode !== 'review'}>{mode === 'review' ? 'Exit Review' : 'Review Mode'}</button>
+            <button onClick={toggleCustom}>{mode === 'custom' ? 'Exit Setup' : 'Custom Setup'}</button>
           </div>
           <div 
             ref={moveListRef}
@@ -1836,6 +2250,25 @@ function App() {
                 );
               })}
             </ol>
+
+            {sandboxMoves.length > 0 && (
+              <ol style={{ paddingLeft: '20px', listStyle: 'none', marginTop: '8px' }}>
+                {sandboxMoves.map((m, i) => {
+                  const from = `${String.fromCharCode(97 + m.from.col)}${8 - m.from.row}`;
+                  const to = `${String.fromCharCode(97 + m.to.col)}${8 - m.to.row}`;
+                  const isBold = sandboxHistoryIndex === i;
+                  return (
+                    <li
+                      key={i}
+                      onClick={() => jumpSandboxMove(i)}
+                      style={{ marginBottom: '4px', fontWeight: isBold ? 'bold' : 'normal', cursor: 'pointer' }}
+                    >
+                      🧪 {from}→{to}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
 
           </div>
         </div>
