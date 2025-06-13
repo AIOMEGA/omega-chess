@@ -709,6 +709,11 @@ function App() {
     return `${String.fromCharCode(97 + col)}${8 - row}`;
   };
 
+  const overlayTop = (row) => {
+    const dispRow = toDisplayCoords(row, 0).row;
+    return dispRow <= 3 ? dispRow * squareSize : dispRow * squareSize - 315;
+  };
+
   const getSquareFromEvent = (e) => {
     const rect = boardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left - boardOffset;
@@ -1733,7 +1738,7 @@ function App() {
                 className="summon-column"
                 style={{
                   left: `${toDisplayCoords(summonOptions.row, c).col * 105 + 4}px`,
-                  top: `${toDisplayCoords(summonOptions.row, c).row * 105 - (summonOptions.color === 'black' ? 315 : 0)}px`,
+                  top: `${overlayTop(summonOptions.row)}px`,
                 }}
               >
                 {summonSymbols.map((symbol, i) => (
@@ -1821,9 +1826,7 @@ function App() {
               className="summon-column"
               style={{
                 left: `${toDisplayCoords(promotionOptions.row, c).col * 105 + 4}px`,
-                top: `${promotionOptions.color === 'black'
-                    ? toDisplayCoords(promotionOptions.row, c).row * 105 - 315
-                    : toDisplayCoords(promotionOptions.row, c).row * 105}px`,
+                top: `${overlayTop(promotionOptions.row)}px`,
               }}
             >
               {(promotionOptions.color === 'white' ? ['♕', '♘', '♖', '♗'] : ['♛', '♞', '♜', '♝']).map((symbol, i) => (
