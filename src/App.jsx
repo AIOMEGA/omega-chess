@@ -854,8 +854,9 @@ function App() {
   // a remote move occurs while the user is in analysis mode so we
   // can return to play mode and keep the incoming board state.
   const forceExitAnalysis = () => {
-    if (mode !== 'analysis') return;
+    if (modeRef.current !== 'analysis') return;
     setMode('play');
+    modeRef.current = 'play';
     setAnalysisHistory([]);
     setAnalysisIndex(-1);
     setSelected(null);
