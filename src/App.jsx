@@ -697,9 +697,18 @@ function App() {
   const boardOffset = 4; // matches board border
 
   const toDisplayCoords = (row, col) =>
-    playerColor === 'white' ? { row, col } : { row: 7 - row, col };
+    playerColor === 'white'
+      ? { row, col }
+      : { row: 7 - row, col: 7 - col };
   const fromDisplayCoords = (row, col) =>
-    playerColor === 'white' ? { row, col } : { row: 7 - row, col };
+    playerColor === 'white'
+      ? { row, col }
+      : { row: 7 - row, col: 7 - col };
+
+  const coordLabel = (row, col) => {
+    const disp = toDisplayCoords(row, col);
+    return `${String.fromCharCode(97 + disp.col)}${8 - disp.row}`;
+  };
 
   const getSquareFromEvent = (e) => {
     const rect = boardRef.current.getBoundingClientRect();
@@ -1724,7 +1733,7 @@ function App() {
                 key={c}
                 className="summon-column"
                 style={{
-                  left: `${c * 105 + 4}px`,
+                  left: `${toDisplayCoords(summonOptions.row, c).col * 105 + 4}px`,
                   top: `${toDisplayCoords(summonOptions.row, c).row * 105 - (summonOptions.color === 'black' ? 315 : 0)}px`,
                 }}
               >
@@ -1812,10 +1821,10 @@ function App() {
               key={c}
               className="summon-column"
               style={{
-                left: `${c * 105 + 4}px`,
+                left: `${toDisplayCoords(promotionOptions.row, c).col * 105 + 4}px`,
                 top: `${promotionOptions.color === 'black'
-                  ? toDisplayCoords(promotionOptions.row, c).row * 105 - 315
-                  : toDisplayCoords(promotionOptions.row, c).row * 105}px`,
+                    ? toDisplayCoords(promotionOptions.row, c).row * 105 - 315
+                    : toDisplayCoords(promotionOptions.row, c).row * 105}px`,
               }}
             >
               {(promotionOptions.color === 'white' ? ['♕', '♘', '♖', '♗'] : ['♛', '♞', '♜', '♝']).map((symbol, i) => (
@@ -1935,7 +1944,11 @@ function App() {
                           color: isDark ? '#f0d9b5' : '#b58863',
                         }}
                       >
-                        {bc === 0 ? 8 - br : ''}
+                        {dispCol === 0
+                          ? playerColor === 'white'
+                            ? 8 - dispRow
+                            : dispRow + 1
+                          : ''}
                       </div>
                       <div
                         className="label"
@@ -1948,7 +1961,7 @@ function App() {
                           color: isDark ? '#f0d9b5' : '#b58863',
                         }}
                       >
-                        {br === 7 ? String.fromCharCode(97 + bc) : ''}
+                        {dispRow === 7 ? String.fromCharCode(97 + bc) : ''}
                       </div>
                       {piece && (
                         <img
@@ -2005,8 +2018,8 @@ function App() {
                   if (whiteMove.castle) {
                     whiteText = `W: ${whiteMove.castle}`;
                   } else {
-                    const from = `${String.fromCharCode(97 + whiteMove.from.col)}${8 - whiteMove.from.row}`;
-                    const to = `${String.fromCharCode(97 + whiteMove.to.col)}${8 - whiteMove.to.row}`;
+                    const from = coordLabel(whiteMove.from.row, whiteMove.from.col);
+                    const to = coordLabel(whiteMove.to.row, whiteMove.to.col);
                     whiteText = `W: ${whiteMove.piece} ${from}→${to}`;
                   }
 
@@ -2015,7 +2028,10 @@ function App() {
                   }
 
                   if (whiteMove.summon) {
-                    const summonTo = `${String.fromCharCode(97 + whiteMove.summon.to.col)}${8 - whiteMove.summon.to.row}`;
+                    const summonTo = coordLabel(
+                      whiteMove.summon.to.row,
+                      whiteMove.summon.to.col
+                    );
                     whiteText += `+${whiteMove.summon.piece}${summonTo}`;
                   }
                 }
@@ -2026,8 +2042,8 @@ function App() {
                   if (blackMove.castle) {
                     blackText = `B: ${blackMove.castle}`;
                   } else {
-                    const from = `${String.fromCharCode(97 + blackMove.from.col)}${8 - blackMove.from.row}`;
-                    const to = `${String.fromCharCode(97 + blackMove.to.col)}${8 - blackMove.to.row}`;
+                    const from = coordLabel(blackMove.from.row, blackMove.from.col);
+                    const to = coordLabel(blackMove.to.row, blackMove.to.col);
                     blackText = `B: ${blackMove.piece} ${from}→${to}`;
                   }
 
@@ -2036,7 +2052,10 @@ function App() {
                   }
 
                   if (blackMove.summon) {
-                    const summonTo = `${String.fromCharCode(97 + blackMove.summon.to.col)}${8 - blackMove.summon.to.row}`;
+                    const summonTo = coordLabel(
+                      blackMove.summon.to.row,
+                      blackMove.summon.to.col
+                    );
                     blackText += `+${blackMove.summon.piece}${summonTo}`;
                   }
                 }
@@ -2083,13 +2102,13 @@ function App() {
                   if (m.castle) {
                     t = m.castle;
                   } else {
-                    const from = `${String.fromCharCode(97 + m.from.col)}${8 - m.from.row}`;
-                    const to = `${String.fromCharCode(97 + m.to.col)}${8 - m.to.row}`;
+                    const from = coordLabel(m.from.row, m.from.col);
+                    const to = coordLabel(m.to.row, m.to.col);
                     t = `${m.piece} ${from}→${to}`;
                   }
                   if (m.promotion) t += `=${m.promotion}`;
                   if (m.summon) {
-                    const summonTo = `${String.fromCharCode(97 + m.summon.to.col)}${8 - m.summon.to.row}`;
+                    const summonTo = coordLabel(m.summon.to.row, m.summon.to.col);
                     t += `+${m.summon.piece}${summonTo}`;
                   }
                   return t;
