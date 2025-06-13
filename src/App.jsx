@@ -696,14 +696,20 @@ function App() {
   const squareSize = 105;
   const boardOffset = 4; // matches board border
 
+  const toDisplayCoords = (row, col) =>
+    playerColor === 'white' ? { row, col } : { row: 7 - row, col };
+  const fromDisplayCoords = (row, col) =>
+    playerColor === 'white' ? { row, col } : { row: 7 - row, col };
+
   const getSquareFromEvent = (e) => {
     const rect = boardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left - boardOffset;
     const y = e.clientY - rect.top - boardOffset;
-    const col = Math.floor(x / squareSize);
-    const row = Math.floor(y / squareSize);
-    if (col < 0 || col > 7 || row < 0 || row > 7) return null;
-    return { row, col };
+    const displayCol = Math.floor(x / squareSize);
+    const displayRow = Math.floor(y / squareSize);
+    if (displayCol < 0 || displayCol > 7 || displayRow < 0 || displayRow > 7)
+      return null;
+    return fromDisplayCoords(displayRow, displayCol);
   };
 
   const toggleAnnotation = (ann) => {
@@ -1582,10 +1588,12 @@ function App() {
         {annotations.map((a, i) => {
   if (a.type === 'circle') return null;
 
-  const x1 = a.from.col * squareSize + squareSize / 2 + boardOffset;
-  const y1 = a.from.row * squareSize + squareSize / 2 + boardOffset;
-  const x2 = a.to.col * squareSize + squareSize / 2 + boardOffset;
-  const y2 = a.to.row * squareSize + squareSize / 2 + boardOffset;
+  const df = toDisplayCoords(a.from.row, a.from.col);
+  const dt = toDisplayCoords(a.to.row, a.to.col);
+  const x1 = df.col * squareSize + squareSize / 2 + boardOffset;
+  const y1 = df.row * squareSize + squareSize / 2 + boardOffset;
+  const x2 = dt.col * squareSize + squareSize / 2 + boardOffset;
+  const y2 = dt.row * squareSize + squareSize / 2 + boardOffset;
 
   let xEnd = x2;
   let yEnd = y2;
@@ -1649,8 +1657,9 @@ function App() {
             const [r, c] = move;
             const target = board[r]?.[c];
             const isEnemy = target && !isSameTeam(piece, target);
-            const endX = c * 105 + 52.5 + 4;
-            const endY = r * 105 + 52.5 + 4;
+            const disp = toDisplayCoords(r, c);
+            const endX = disp.col * 105 + 52.5 + 4;
+            const endY = disp.row * 105 + 52.5 + 4;
             if (isEnemy) {
               return (
               //   <line
@@ -1716,7 +1725,7 @@ function App() {
                 className="summon-column"
                 style={{
                   left: `${c * 105 + 4}px`,
-                  top: `${summonOptions.row * 105 - (summonOptions.color === 'black' ? 315 : 0)}px`,
+                  top: `${toDisplayCoords(summonOptions.row, c).row * 105 - (summonOptions.color === 'black' ? 315 : 0)}px`,
                 }}
               >
                 {summonSymbols.map((symbol, i) => (
@@ -1804,7 +1813,9 @@ function App() {
               className="summon-column"
               style={{
                 left: `${c * 105 + 4}px`,
-                top: `${promotionOptions.color === 'black' ? promotionOptions.row * 105 - 315 : promotionOptions.row * 105}px`,
+                top: `${promotionOptions.color === 'black'
+                  ? toDisplayCoords(promotionOptions.row, c).row * 105 - 315
+                  : toDisplayCoords(promotionOptions.row, c).row * 105}px`,
               }}
             >
               {(promotionOptions.color === 'white' ? ['♕', '♘', '♖', '♗'] : ['♛', '♞', '♜', '♝']).map((symbol, i) => (
@@ -1876,25 +1887,27 @@ function App() {
         >
           {/* Your board rendering below */}
           <div className={`board${mode === 'analysis' ? ' analysis' : ''}`} style={{ zIndex: 1, position: 'relative' }}>
-            {board.map((rowArr, row) => (
-              <div key={row} className="row">
-                {rowArr.map((piece, col) => {
-                  const isDark = (row + col) % 2 === 1;
-                  const isSelected = selected?.row === row && selected?.col === col;
+          {Array.from({ length: 8 }).map((_, dispRow) => (
+              <div key={dispRow} className="row">
+                {Array.from({ length: 8 }).map((_, dispCol) => {
+                  const { row: br, col: bc } = fromDisplayCoords(dispRow, dispCol);
+                  const piece = board[br][bc];
+                  const isDark = (br + bc) % 2 === 1;
+                  const isSelected = selected?.row === br && selected?.col === bc;
 
-                  const key = `${row}-${col}`;
+                  const key = `${br}-${bc}`;
                   const isLastFrom = key === lastFromKey;
                   const isLastTo = key === lastToKey;
                   const isCheck = checkSquares.has(key);
                   const isCircleAnn = annotations.some(
-                    (a) => a.type === 'circle' && a.row === row && a.col === col
+                    (a) => a.type === 'circle' && a.row === br && a.col === bc
                   );
 
                   return (
                     <div
-                      key={col}
+                      key={dispCol}
                       className={`square ${isDark ? 'dark' : 'light'} ${isSelected ? 'selected' : ''}`}
-                      onClick={() => handleClick(row, col)}
+                      onClick={() => handleClick(br, bc)}
                     >
                       {(isLastFrom || isLastTo) && (
                         <div
@@ -1922,7 +1935,7 @@ function App() {
                           color: isDark ? '#f0d9b5' : '#b58863',
                         }}
                       >
-                        {col === 0 ? 8 - row : ''}
+                        {bc === 0 ? 8 - br : ''}
                       </div>
                       <div
                         className="label"
@@ -1935,7 +1948,7 @@ function App() {
                           color: isDark ? '#f0d9b5' : '#b58863',
                         }}
                       >
-                        {row === 7 ? String.fromCharCode(97 + col) : ''}
+                        {br === 7 ? String.fromCharCode(97 + bc) : ''}
                       </div>
                       {piece && (
                         <img
