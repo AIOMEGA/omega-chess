@@ -16,113 +16,104 @@ export default function useMoveTree(initialState) {
     children: [],
   });
 
-  const [root] = useState(() => createNode(initialState, null, null));
+  const [root] = useState(() => createNode(initialState, null));
   const [currentNode, setCurrentNode] = useState(root);
-  const latestNodeRef = useRef(root);
+  const latestRef = useRef(root);
 
   const [analysisRoot, setAnalysisRoot] = useState(null);
   const [analysisNode, setAnalysisNode] = useState(null);
   const analysisBaseRef = useRef(null);
 
-  const [board, setBoard] = useState(clone(initialState.board));
-  const [turn, setTurn] = useState(initialState.turn);
-  const [kingState, setKingState] = useState(clone(initialState.kingState));
-  const [castlingRights, setCastlingRights] = useState(
-    clone(initialState.castlingRights)
-  );
-  const [enPassantTarget, setEnPassantTarget] = useState(
-    initialState.enPassantTarget
-  );
-
-  const [mode, setModeState] = useState('standard');
+  const [mode, setModeState] = useState('play');
   const [reviewMode, setReviewMode] = useState(false);
 
   const updateReview = useCallback(
     (node) => {
       if (mode === 'analysis') return;
-      const reviewing = node !== latestNodeRef.current;
+      const reviewing = node !== latestRef.current;
       setReviewMode(reviewing);
-      setModeState(reviewing ? 'review' : 'standard');
+      setModeState(reviewing ? 'review' : 'play');
     },
     [mode]
   );
 
   const jumpToNode = useCallback(
     (node) => {
-      if (!node) return;
-      setBoard(clone(node.board));
-      setTurn(node.turn);
-      setKingState(clone(node.kingState));
-      setCastlingRights(clone(node.castlingRights));
-      setEnPassantTarget(node.enPassantTarget);
-
+      if (!node) return null;
       if (mode === 'analysis') {
         setAnalysisNode(node);
       } else {
         setCurrentNode(node);
         updateReview(node);
       }
+      return node;
     },
     [mode, updateReview]
   );
 
   const recordMove = useCallback(
-    (moveData) => {
+    (state) => {
       const node = mode === 'analysis' ? analysisNode : currentNode;
-      const newNode = createNode(moveData, moveData.move, node);
+      const newNode = createNode(state, state.move, node);
       node.children.push(newNode);
 
       if (mode === 'analysis') {
         setAnalysisNode(newNode);
       } else {
         setCurrentNode(newNode);
-        latestNodeRef.current = newNode;
+        latestRef.current = newNode;
         updateReview(newNode);
       }
-      jumpToNode(newNode);
+      return newNode;
     },
-    [mode, currentNode, analysisNode, jumpToNode, updateReview]
+    [mode, currentNode, analysisNode, updateReview]
   );
 
   const undo = useCallback(() => {
     const node = mode === 'analysis' ? analysisNode : currentNode;
-    if (!node.parent) return;
-    jumpToNode(node.parent);
+    if (!node.parent) return node;
+    return jumpToNode(node.parent);
   }, [mode, currentNode, analysisNode, jumpToNode]);
 
   const redo = useCallback(
     (index = 0) => {
       const node = mode === 'analysis' ? analysisNode : currentNode;
       const child = node.children[index];
-      if (child) jumpToNode(child);
+      if (child) return jumpToNode(child);
+      return node;
     },
     [mode, currentNode, analysisNode, jumpToNode]
   );
 
-  const startAnalysis = useCallback(() => {
-    if (mode === 'analysis') return;
-    analysisBaseRef.current = currentNode;
-    const state = {
-      board,
-      turn,
-      kingState,
-      castlingRights,
-      enPassantTarget,
-    };
-    const rootNode = createNode(state, null, null);
-    setAnalysisRoot(rootNode);
-    setAnalysisNode(rootNode);
-    setModeState('analysis');
-  }, [mode, currentNode, board, turn, kingState, castlingRights, enPassantTarget]);
+  const startAnalysis = useCallback(
+    (state) => {
+      if (mode === 'analysis') return;
+      analysisBaseRef.current = currentNode;
+      const rootNode = createNode(state, null);
+      setAnalysisRoot(rootNode);
+      setAnalysisNode(rootNode);
+      setModeState('analysis');
+    },
+    [mode, currentNode]
+  );
 
   const exitAnalysis = useCallback(() => {
     if (mode !== 'analysis') return;
     setAnalysisRoot(null);
     setAnalysisNode(null);
-    setModeState('standard');
+    setModeState('play');
     const base = analysisBaseRef.current || currentNode;
     jumpToNode(base);
   }, [mode, jumpToNode, currentNode]);
+
+  const removeLatest = useCallback(() => {
+    const latest = latestRef.current;
+    if (!latest.parent) return latest;
+    const parent = latest.parent;
+    parent.children = parent.children.filter((c) => c !== latest);
+    latestRef.current = parent;
+    return jumpToNode(parent);
+  }, [jumpToNode]);
 
   const setMode = useCallback((m) => {
     setModeState(m);
@@ -134,19 +125,16 @@ export default function useMoveTree(initialState) {
     currentNode,
     analysisRoot,
     analysisNode,
-    board,
-    turn,
-    kingState,
-    castlingRights,
-    enPassantTarget,
     mode,
     reviewMode,
-    setMode,
     recordMove,
     jumpToNode,
     undo,
     redo,
     startAnalysis,
     exitAnalysis,
+    removeLatest,
+    getLatestNode: () => latestRef.current,
+    setMode,
   };
 }

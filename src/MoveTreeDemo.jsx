@@ -47,7 +47,19 @@ export default function MoveTreeDemo() {
       <button onClick={addMove}>Add Move</button>
       <button onClick={undo}>Undo</button>
       <button onClick={() => redo(0)}>Redo</button>
-      <button onClick={startAnalysis}>Start Analysis</button>
+      <button
+        onClick={() =>
+          startAnalysis({
+            board: activeNode.board,
+            turn: activeNode.turn,
+            kingState: activeNode.kingState,
+            castlingRights: activeNode.castlingRights,
+            enPassantTarget: activeNode.enPassantTarget,
+          })
+        }
+      >
+        Start Analysis
+      </button>
       <button onClick={exitAnalysis}>Exit Analysis</button>
       <MoveTreeView root={activeRoot} currentNode={activeNode} onSelect={jumpToNode} />
     </div>
