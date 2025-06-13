@@ -699,7 +699,14 @@ function App() {
   const historyIndexRef = useRef(-1); // latest historyIndex
   const remoteUndoRef = useRef(null); // latest remote undo handler
 
-  const { recordMove: treeRecordMove } = useMoveTree({
+  const {
+    recordMove: treeRecordMove,
+    jumpToNode: treeJumpToNode,
+    undo: treeUndo,
+    redo: treeRedo,
+    root,
+    analysisRoot,
+  } = useMoveTree({
     board: cloneBoard(initialBoard),
     turn: 'white',
     kingState: {
@@ -892,22 +899,41 @@ function App() {
   // Helper to push a move onto the history stack. If we have undone moves,
   // they are sliced off before the new move is appended.
   const recordMove = (move, forcePlay = false) => {
+    const node = treeRecordMove({
+      board: cloneBoard(move.board),
+      turn: move.turn === 'white' ? 'black' : 'white',
+      kingState: move.kingState ? deepClone(move.kingState) : deepClone(kingState),
+      castlingRights: move.castlingRights
+        ? deepClone(move.castlingRights)
+        : deepClone(castlingRights),
+      enPassantTarget: move.enPassantTarget ? { ...move.enPassantTarget } : null,
+      move,
+    });
+
+    setBoard(cloneBoard(node.board));
+    setTurn(node.turn);
+    setKingState(deepClone(node.kingState));
+    setCastlingRights(deepClone(node.castlingRights));
+    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+
+    const moveRecord = { ...move, node };
+
     if (mode === 'analysis' && !forcePlay) {
       const newHistory = analysisHistory.slice(0, analysisIndex + 1);
-      newHistory.push(move);
+      newHistory.push(moveRecord);
       setAnalysisHistory(newHistory);
       setAnalysisIndex(newHistory.length - 1);
-      return;
-    }
-    const baseHistory = forcePlay
-      ? moveHistoryRef.current
-      : moveHistory.slice(0, historyIndex + 1);
+    } else {
+      const baseHistory = forcePlay
+        ? moveHistoryRef.current
+        : moveHistory.slice(0, historyIndex + 1);
 
-    const newHistory = [...baseHistory, move];
-    setMoveHistory(newHistory);
-    moveHistoryRef.current = newHistory;
-    setHistoryIndex(newHistory.length - 1);
-    historyIndexRef.current = newHistory.length - 1;
+      const newHistory = [...baseHistory, moveRecord];
+      setMoveHistory(newHistory);
+      moveHistoryRef.current = newHistory;
+      setHistoryIndex(newHistory.length - 1);
+      historyIndexRef.current = newHistory.length - 1;
+    }
     
     if (!suppressRef.current) {
       bcRef.current?.postMessage({ type: 'move', move, senderId: instanceIdRef.current });
@@ -939,7 +965,7 @@ function App() {
       }
     }
 
-    const node = treeRecordMove({
+    node = treeRecordMove({
       board: cloneBoard(move.board),
       turn: move.turn === 'white' ? 'black' : 'white',
       kingState: move.kingState ? deepClone(move.kingState) : deepClone(kingState),
@@ -1012,22 +1038,13 @@ function App() {
   const undoMove = () => {
     if (mode === 'analysis') {
       if (analysisIndex < 0) return;
-      const newIndex = analysisIndex - 1;
-      if (newIndex >= 0) {
-        const prev = analysisHistory[newIndex];
-        setBoard(prev.board);
-        setTurn(prev.turn === 'white' ? 'black' : 'white');
-        if (prev.kingState) setKingState(deepClone(prev.kingState));
-        if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
-        setEnPassantTarget(prev.enPassantTarget || null);
-      } else if (analysisSavedRef.current) {
-        setBoard(cloneBoard(analysisSavedRef.current.board));
-        setTurn(analysisSavedRef.current.turn);
-        setKingState(deepClone(analysisSavedRef.current.kingState));
-        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
-        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
-      }
-      setAnalysisIndex(newIndex);
+      const node = treeUndo();
+      setBoard(cloneBoard(node.board));
+      setTurn(node.turn);
+      setKingState(deepClone(node.kingState));
+      setCastlingRights(deepClone(node.castlingRights));
+      setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+      setAnalysisIndex(analysisIndex - 1);
       return;
     }
 
@@ -1035,33 +1052,13 @@ function App() {
     const isOwnLast =
       historyIndex === moveHistory.length - 1 &&
       moveHistory[historyIndex].turn === playerColor;
+    const node = treeUndo();
+    setBoard(cloneBoard(node.board));
+    setTurn(node.turn);
+    setKingState(deepClone(node.kingState));
+    setCastlingRights(deepClone(node.castlingRights));
+    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
     const newIndex = historyIndex - 1;
-  
-    if (newIndex >= 0) {
-      const prev = moveHistory[newIndex];
-      setBoard(prev.board);
-      setTurn(prev.turn === 'white' ? 'black' : 'white');
-      if (prev.kingState) {
-        setKingState(deepClone(prev.kingState));
-      }
-      if (prev.castlingRights) {
-        setCastlingRights(deepClone(prev.castlingRights));
-      }
-      setEnPassantTarget(prev.enPassantTarget || null);
-    } else {
-      // If going before the first move, reset everything
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
   
     setHistoryIndex(newIndex);
     historyIndexRef.current = newIndex;
@@ -1090,29 +1087,24 @@ function App() {
   const redoMove = () => {
     if (mode === 'analysis') {
       if (analysisIndex >= analysisHistory.length - 1) return;
-      const newIndex = analysisIndex + 1;
-      const next = analysisHistory[newIndex];
-      setBoard(next.board);
-      setTurn(next.turn === 'white' ? 'black' : 'white');
-      if (next.kingState) setKingState(deepClone(next.kingState));
-      if (next.castlingRights) setCastlingRights(deepClone(next.castlingRights));
-      setEnPassantTarget(next.enPassantTarget || null);
-      setAnalysisIndex(newIndex);
+      const node = treeRedo();
+      setBoard(cloneBoard(node.board));
+      setTurn(node.turn);
+      setKingState(deepClone(node.kingState));
+      setCastlingRights(deepClone(node.castlingRights));
+      setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+      setAnalysisIndex(analysisIndex + 1);
       return;
     }
 
     if (historyIndex >= moveHistory.length - 1) return;
+    const node = treeRedo();
+    setBoard(cloneBoard(node.board));
+    setTurn(node.turn);
+    setKingState(deepClone(node.kingState));
+    setCastlingRights(deepClone(node.castlingRights));
+    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
     const newIndex = historyIndex + 1;
-    const next = moveHistory[newIndex];
-    setBoard(next.board);
-    setTurn(next.turn === 'white' ? 'black' : 'white');
-    if (next.kingState) {
-      setKingState(deepClone(next.kingState));
-    }
-    if (next.castlingRights) {
-      setCastlingRights(deepClone(next.castlingRights));
-    }
-    setEnPassantTarget(next.enPassantTarget || null);
     setHistoryIndex(newIndex);
     historyIndexRef.current = newIndex;
 
@@ -1168,47 +1160,27 @@ function App() {
   const jumpToMove = (index) => {
     if (mode === 'analysis') {
       const move = analysisHistory[index];
-      if (move) {
-        setBoard(move.board);
-        setTurn(move.turn === 'white' ? 'black' : 'white');
-        if (move.kingState) setKingState(deepClone(move.kingState));
-        if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
-        setEnPassantTarget(move.enPassantTarget || null);
-      } else if (analysisSavedRef.current) {
-        setBoard(cloneBoard(analysisSavedRef.current.board));
-        setTurn(analysisSavedRef.current.turn);
-        setKingState(deepClone(analysisSavedRef.current.kingState));
-        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
-        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
-      }
+      const target = move ? move.node : analysisRoot;
+      if (!target) return;
+      const node = treeJumpToNode(target);
+      setBoard(cloneBoard(node.board));
+      setTurn(node.turn);
+      setKingState(deepClone(node.kingState));
+      setCastlingRights(deepClone(node.castlingRights));
+      setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
       setAnalysisIndex(index);
       return;
     }
     
     const move = moveHistory[index];
-    if (move) {
-      setBoard(move.board);
-      setTurn(move.turn === 'white' ? 'black' : 'white');
-      if (move.kingState) {
-        setKingState(deepClone(move.kingState));
-      }
-      if (move.castlingRights) {
-        setCastlingRights(deepClone(move.castlingRights));
-      }
-      setEnPassantTarget(move.enPassantTarget || null);
-    } else {
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
+    const target = move ? move.node : root;
+    if (!target) return;
+    const node = treeJumpToNode(target);
+    setBoard(cloneBoard(node.board));
+    setTurn(node.turn);
+    setKingState(deepClone(node.kingState));
+    setCastlingRights(deepClone(node.castlingRights));
+    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
     setHistoryIndex(index);
     historyIndexRef.current = index;
 
