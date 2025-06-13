@@ -2132,7 +2132,11 @@ function App() {
             paddingRight: '8px'
           }}>
             <ol style={{ paddingLeft: '20px', listStyle: 'none', margin: 0 }}>
-              {Array.from({ length: Math.ceil((historyIndex + 1) / 2) }).map((_, i) => {
+              {Array.from({
+                length: Math.ceil(
+                  ((reviewMode ? moveHistory.length : historyIndex + 1) / 2)
+                ),
+              }).map((_, i) => {
                 const whiteMove = moveHistory[i * 2];
                 const blackMove = moveHistory[i * 2 + 1];
 
