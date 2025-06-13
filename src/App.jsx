@@ -1220,7 +1220,15 @@ function App() {
       validMoves = getValidBishopMoves(board, selected.row, selected.col, selectedPiece);
     }
     if (selectedPiece === '♔' || selectedPiece === '♚') {
-      validMoves = getValidKingMoves(board, selected.row, selected.col, selectedPiece, kingState, castlingRights);
+      const colorKey = selectedPiece === '♔' ? 'white' : 'black';
+      validMoves = getValidKingMoves(
+        board,
+        selected.row,
+        selected.col,
+        selectedPiece,
+        kingState[colorKey],
+        castlingRights
+      );
     }
     validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, selectedPiece, enPassantTarget);
 
@@ -1356,16 +1364,32 @@ function App() {
       setBoard(newBoard);
 
       const isKing = selectedPiece === '♔' || selectedPiece === '♚';
-      const color = selectedPiece === '♔' ? 'white' : 'black';
-      const reachedBackRank = (isKing && (
-        (turn === 'white' && row === 0) || 
-        (turn === 'black' && row === 7))
-      );
-      const shouldWaitForSummon = 
-      isKing && 
-      reachedBackRank &&
-      !kingState[color].hasSummoned &&
-      (!kingState[color].needsReturn || kingState[color].returnedHome);
+      const pieceColor = selectedPiece === '♔' ? 'white' : 'black';
+      const homeRow = isKing ? (pieceColor === 'white' ? 7 : 0) : null;
+      const enemyRow = isKing ? (pieceColor === 'white' ? 0 : 7) : null;
+      const reachedBackRank = isKing && row === enemyRow;
+      const isBackHome = isKing && row === homeRow;
+
+      let newKingState = kingState;
+      if (isKing) {
+        newKingState = {
+          ...kingState,
+          [pieceColor]: {
+            ...kingState[pieceColor],
+            returnedHome: isBackHome ? true : kingState[pieceColor].returnedHome,
+            hasSummoned: isBackHome ? false : kingState[pieceColor].hasSummoned,
+            needsReturn: isBackHome ? false : kingState[pieceColor].needsReturn,
+          },
+        };
+      }
+
+      const shouldWaitForSummon =
+        isKing &&
+        reachedBackRank &&
+        !kingState[pieceColor].hasSummoned &&
+        (!kingState[pieceColor].needsReturn || kingState[pieceColor].returnedHome);
+
+      let moveKingState = newKingState;
 
       if (!shouldWaitForSummon) {
         const move = {
@@ -1375,7 +1399,7 @@ function App() {
           captured: board[row][col] || null,
           board: cloneBoard(newBoard),
           turn: turn,
-          kingState: deepClone(kingState),
+          kingState: deepClone(moveKingState),
           enPassantTarget: newEnPassantTarget,
           castlingRights: deepClone(updatedRights),
         };
@@ -1386,12 +1410,12 @@ function App() {
       
 
       if (selectedPiece === '♔' || selectedPiece === '♚') {
-        const isWhite = selectedPiece === '♔';
-        const homeRow = isWhite ? 7 : 0;
-        const enemyRow = isWhite ? 0 : 7;
-        const pieceColor = isWhite ? 'white' : 'black';
+        // const isWhite = selectedPiece === '♔';
+        // const homeRow = isWhite ? 7 : 0;
+        // const enemyRow = isWhite ? 0 : 7;
+        // const pieceColor = isWhite ? 'white' : 'black';
 
-        const isBackHome = row === homeRow;
+        // const isBackHome = row === homeRow;
 
         // Perform summon GUI logic on the **new board**
         const updatedBoard = newBoard;
@@ -1437,15 +1461,7 @@ function App() {
           }
         }
 
-        setKingState(prev => ({
-          ...prev,
-          [pieceColor]: {
-            ...prev[pieceColor],
-            returnedHome: isBackHome ? true : prev[pieceColor].returnedHome,
-            hasSummoned: isBackHome ? false : prev[pieceColor].hasSummoned,
-            needsReturn: isBackHome ? false : prev[pieceColor].needsReturn,
-          }
-        }));
+        setKingState(newKingState);
       }
    
     }
@@ -1660,7 +1676,17 @@ function App() {
           else if (piece === '♕' || piece === '♛') validMoves = getValidQueenMoves(board, selected.row, selected.col, piece);
           else if (piece === '♘' || piece === '♞') validMoves = getValidKnightMoves(board, selected.row, selected.col, piece);
           else if (piece === '♗' || piece === '♝') validMoves = getValidBishopMoves(board, selected.row, selected.col, piece);
-          else if (piece === '♔' || piece === '♚') validMoves = getValidKingMoves(board, selected.row, selected.col, piece, kingState, castlingRights);
+          else if (piece === '♔' || piece === '♚') {
+            const key = piece === '♔' ? 'white' : 'black';
+            validMoves = getValidKingMoves(
+              board,
+              selected.row,
+              selected.col,
+              piece,
+              kingState[key],
+              castlingRights
+            );
+          }
 
           validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, piece, enPassantTarget);
 
