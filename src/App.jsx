@@ -706,8 +706,7 @@ function App() {
       : { row: 7 - row, col: 7 - col };
 
   const coordLabel = (row, col) => {
-    const disp = toDisplayCoords(row, col);
-    return `${String.fromCharCode(97 + disp.col)}${8 - disp.row}`;
+    return `${String.fromCharCode(97 + col)}${8 - row}`;
   };
 
   const getSquareFromEvent = (e) => {
