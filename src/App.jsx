@@ -692,6 +692,11 @@ function App() {
   const suppressRef = useRef(false);
   const recordMoveRef = useRef(null); // holds latest recordMove implementation
   const modeRef = useRef('play');
+  const [reviewMode, setReviewMode] = useState(false); // true when viewing past moves
+  const reviewModeRef = useRef(false); // latest review mode state
+  const moveHistoryRef = useRef([]); // latest moveHistory for remote handlers
+  const historyIndexRef = useRef(-1); // latest historyIndex
+  const remoteUndoRef = useRef(null); // latest remote undo handler
 
   const squareSize = 105;
   const boardOffset = 4; // matches board border
@@ -989,6 +994,9 @@ function App() {
     }
 
     if (historyIndex < 0) return;
+    const isOwnLast =
+      historyIndex === moveHistory.length - 1 &&
+      moveHistory[historyIndex].turn === playerColor;
     const newIndex = historyIndex - 1;
   
     if (newIndex >= 0) {
@@ -1018,6 +1026,27 @@ function App() {
     }
   
     setHistoryIndex(newIndex);
+    historyIndexRef.current = newIndex;
+
+    if (isOwnLast) {
+      setReviewMode(false);
+      reviewModeRef.current = false;
+    } else {
+      setReviewMode(true);
+      reviewModeRef.current = true;
+    }
+
+    if (isOwnLast) {
+      const newHistory = moveHistory.slice(0, -1);
+      setMoveHistory(newHistory);
+      moveHistoryRef.current = newHistory;
+      if (!suppressRef.current) {
+        bcRef.current?.postMessage({
+          type: 'undo',
+          senderId: instanceIdRef.current,
+        });
+      }
+    }
   };
   
   const redoMove = () => {
@@ -1047,7 +1076,56 @@ function App() {
     }
     setEnPassantTarget(next.enPassantTarget || null);
     setHistoryIndex(newIndex);
+    historyIndexRef.current = newIndex;
+
+    const reviewing = newIndex < moveHistory.length - 1;
+    setReviewMode(reviewing);
+    reviewModeRef.current = reviewing;
   };
+
+  const handleRemoteUndo = () => {
+    const currentHistory = moveHistoryRef.current;
+    if (currentHistory.length === 0) return;
+
+    const newHistory = currentHistory.slice(0, -1);
+    const newIndex = newHistory.length - 1;
+
+    setMoveHistory(newHistory);
+    moveHistoryRef.current = newHistory;
+    setHistoryIndex(newIndex);
+    historyIndexRef.current = newIndex;
+
+    if (newIndex >= 0) {
+      const prev = newHistory[newIndex];
+      setBoard(cloneBoard(prev.board));
+      setTurn(prev.turn === 'white' ? 'black' : 'white');
+      if (prev.kingState) setKingState(deepClone(prev.kingState));
+      if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
+      setEnPassantTarget(prev.enPassantTarget || null);
+    } else {
+      setBoard(cloneBoard(initialBoard));
+      setTurn('white');
+      setKingState({
+        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+      });
+      setEnPassantTarget(null);
+      setCastlingRights({
+        white: { kingSide: true, queenSide: true },
+        black: { kingSide: true, queenSide: true },
+      });
+    }
+    setReviewMode(false);
+    reviewModeRef.current = false;
+  };
+
+  // Keep latest history values for BroadcastChannel handlers
+  useEffect(() => {
+    moveHistoryRef.current = moveHistory;
+    historyIndexRef.current = historyIndex;
+    remoteUndoRef.current = handleRemoteUndo;
+    reviewModeRef.current = reviewMode;
+  });
 
   const jumpToMove = (index) => {
     if (mode === 'analysis') {
@@ -1094,6 +1172,11 @@ function App() {
       });
     }
     setHistoryIndex(index);
+    historyIndexRef.current = index;
+
+    const reviewing = index < moveHistory.length - 1;
+    setReviewMode(reviewing);
+    reviewModeRef.current = reviewing;
   };
   
   const pieceImagesMap = {
@@ -1236,6 +1319,11 @@ function App() {
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
     
     if (isValidMove) {
+      if (reviewMode) {
+        setStatusMessage('Return to the latest move to resume play.');
+        setSelected(null);
+        return;
+      }
       const newBoard = cloneBoard(board);
       const movingPawn = selectedPiece;
     
@@ -1522,6 +1610,15 @@ function App() {
         if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
         setEnPassantTarget(move.enPassantTarget || null);
         if (recordMoveRef.current) recordMoveRef.current(move, true);
+        setReviewMode(false);
+        reviewModeRef.current = false;
+        suppressRef.current = false;
+      } else if (type === 'undo') {
+        suppressRef.current = true;
+        if (modeRef.current === 'analysis') {
+          forceExitAnalysis();
+        }
+        if (remoteUndoRef.current) remoteUndoRef.current();
         suppressRef.current = false;
       } else if (type === 'reset') {
         suppressRef.current = true;
@@ -2015,6 +2112,9 @@ function App() {
             <button onClick={() => setResignInfo({ winner: turn === 'white' ? 'black' : 'white' })}>Resign</button>
             {mode === 'analysis' && (
               <button onClick={deactivateAnalysis}>Exit Analysis</button>
+            )}
+            {reviewMode && mode === 'play' && (
+              <div style={{ color: 'yellow', fontWeight: 'bold' }}>Review Mode</div>
             )}
           </div>
           <div 
