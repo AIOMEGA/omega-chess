@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import useMoveTree from './useMoveTree.js';
 import './App.css';
 import './assets/logo.png'
 
@@ -698,6 +699,20 @@ function App() {
   const historyIndexRef = useRef(-1); // latest historyIndex
   const remoteUndoRef = useRef(null); // latest remote undo handler
 
+  const { recordMove: treeRecordMove } = useMoveTree({
+    board: cloneBoard(initialBoard),
+    turn: 'white',
+    kingState: {
+      white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+      black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+    },
+    castlingRights: {
+      white: { kingSide: true, queenSide: true },
+      black: { kingSide: true, queenSide: true },
+    },
+    enPassantTarget: null,
+  });
+
   const squareSize = 105;
   const boardOffset = 4; // matches board border
 
@@ -923,6 +938,23 @@ function App() {
         setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
       }
     }
+
+    const node = treeRecordMove({
+      board: cloneBoard(move.board),
+      turn: move.turn === 'white' ? 'black' : 'white',
+      kingState: move.kingState ? deepClone(move.kingState) : deepClone(kingState),
+      castlingRights: move.castlingRights
+        ? deepClone(move.castlingRights)
+        : deepClone(castlingRights),
+      enPassantTarget: move.enPassantTarget ? { ...move.enPassantTarget } : null,
+      move,
+    });
+
+    setBoard(cloneBoard(node.board));
+    setTurn(node.turn);
+    setKingState(deepClone(node.kingState));
+    setCastlingRights(deepClone(node.castlingRights));
+    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
   };
 
   // Keep a ref to the latest recordMove so BroadcastChannel handler
