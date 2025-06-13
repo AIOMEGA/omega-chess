@@ -691,6 +691,7 @@ function App() {
   const instanceIdRef = useRef(Math.random().toString(36).slice(2));
   const suppressRef = useRef(false);
   const recordMoveRef = useRef(null); // holds latest recordMove implementation
+  const modeRef = useRef('play');
 
   const squareSize = 105;
   const boardOffset = 4; // matches board border
@@ -898,6 +899,11 @@ function App() {
   // always invokes the current logic even though it was bound once
   useEffect(() => {
     recordMoveRef.current = recordMove;
+  });
+
+  // Keep current mode available for BroadcastChannel listeners
+  useEffect(() => {
+    modeRef.current = mode;
   });
 
   // --- Hooks ---
@@ -1472,7 +1478,7 @@ function App() {
       if (senderId === instanceIdRef.current) return;
       if (type === 'move') {
         suppressRef.current = true;
-        if (mode === 'analysis') {
+        if (modeRef.current === 'analysis') {
           forceExitAnalysis();
         }
         setBoard(cloneBoard(move.board));
@@ -1484,7 +1490,7 @@ function App() {
         suppressRef.current = false;
       } else if (type === 'reset') {
         suppressRef.current = true;
-        if (mode === 'analysis') {
+        if (modeRef.current === 'analysis') {
           forceExitAnalysis();
         }
         resetGame();
@@ -1574,26 +1580,44 @@ function App() {
           </marker>
         </defs>
         {annotations.map((a, i) => {
-          if (a.type === 'circle') return null;
-          const x1 = a.from.col * squareSize + squareSize / 2 + boardOffset;
-          const y1 = a.from.row * squareSize + squareSize / 2 + boardOffset;
-          const x2 = a.to.col * squareSize + squareSize / 2 + boardOffset;
-          const y2 = a.to.row * squareSize + squareSize / 2 + boardOffset;
-          const stroke = a.type === 'arrow' ? 'orange' : 'red';
-          return (
-            <line
-              key={i}
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              stroke={stroke}
-              strokeWidth={12}
-              markerEnd={a.type === 'arrow' ? 'url(#ann-arrow)' : undefined}
-              opacity="0.65"
-            />
-          );
-        })}
+  if (a.type === 'circle') return null;
+
+  const x1 = a.from.col * squareSize + squareSize / 2 + boardOffset;
+  const y1 = a.from.row * squareSize + squareSize / 2 + boardOffset;
+  const x2 = a.to.col * squareSize + squareSize / 2 + boardOffset;
+  const y2 = a.to.row * squareSize + squareSize / 2 + boardOffset;
+
+  let xEnd = x2;
+  let yEnd = y2;
+  let marker = undefined;
+
+  if (a.type === 'arrow') {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const shorten = 25;
+    xEnd = x2 - (dx / len) * shorten;
+    yEnd = y2 - (dy / len) * shorten;
+    marker = 'url(#ann-arrow)';
+  }
+
+  const stroke = a.type === 'arrow' ? 'orange' : 'red';
+
+  return (
+    <line
+      key={i}
+      x1={x1}
+      y1={y1}
+      x2={xEnd}
+      y2={yEnd}
+      stroke={stroke}
+      strokeWidth={12}
+      markerEnd={marker}
+      opacity="0.65"
+    />
+  );
+})}
+
       </svg>
       <svg
         width="840"
