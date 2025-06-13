@@ -883,10 +883,15 @@ function App() {
       setAnalysisIndex(newHistory.length - 1);
       return;
     }
-    const newHistory = moveHistory.slice(0, historyIndex + 1);
-    newHistory.push(move);
+    const baseHistory = forcePlay
+      ? moveHistoryRef.current
+      : moveHistory.slice(0, historyIndex + 1);
+
+    const newHistory = [...baseHistory, move];
     setMoveHistory(newHistory);
+    moveHistoryRef.current = newHistory;
     setHistoryIndex(newHistory.length - 1);
+    historyIndexRef.current = newHistory.length - 1;
     
     if (!suppressRef.current) {
       bcRef.current?.postMessage({ type: 'move', move, senderId: instanceIdRef.current });
