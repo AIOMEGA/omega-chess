@@ -976,6 +976,7 @@ function App() {
 
     // The board state has already been recorded above. Returning the node
     // from that call keeps the tree in sync without duplicating entries.
+    return node;
   };
 
   // Keep a ref to the latest recordMove so BroadcastChannel handler
@@ -1212,7 +1213,8 @@ function App() {
         castlingRights: deepClone(castlingRights),
       };
 
-      recordMove(move);
+      const node = recordMove(move);
+      treeJumpToNode(node);
       setSummonOptions(null);
       setLastKingMove(null);
       setTurn(prev => (prev === 'white' ? 'black' : 'white'));
@@ -1283,11 +1285,6 @@ function App() {
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
     
     if (isValidMove) {
-      if (reviewMode) {
-        setStatusMessage('Return to the latest move to resume play.');
-        setSelected(null);
-        return;
-      }
       const newBoard = cloneBoard(board);
       const movingPawn = selectedPiece;
     
@@ -1331,7 +1328,8 @@ function App() {
           castlingRights: deepClone(updatedRights),
         };
 
-        recordMove(move);
+        const node = recordMove(move);
+        treeJumpToNode(node);
         setTurn(prev => (prev === 'white' ? 'black' : 'white'));
         setSelected(null);
         return;
@@ -1456,7 +1454,8 @@ function App() {
           castlingRights: deepClone(updatedRights),
         };
 
-        recordMove(move);
+        const node = recordMove(move);
+        treeJumpToNode(node);
         setTurn(prev => (prev === 'white' ? 'black' : 'white'));
       }
       
@@ -1869,7 +1868,8 @@ function App() {
 
                       // THEN update game state
                       
-                      recordMove(move);
+                      const node = recordMove(move);
+                      treeJumpToNode(node);
                       setBoard(newBoard);
                       setTurn(prev => (prev === 'white' ? 'black' : 'white'));
                       setSummonOptions(null);
@@ -1895,7 +1895,8 @@ function App() {
                     castlingRights: deepClone(castlingRights),
                   };
 
-                  recordMove(move);
+                  const node = recordMove(move);
+                  treeJumpToNode(node);
                   setSummonOptions(null);
                   setLastKingMove(null);
                   setTurn(prev => (prev === 'white' ? 'black' : 'white'));
@@ -1946,7 +1947,8 @@ function App() {
                       castlingRights: deepClone(castlingRights),
                     };
 
-                    recordMove(move);
+                    const node = recordMove(move);
+                    treeJumpToNode(node);
                     setBoard(newBoard);
                     setPromotionOptions(null);
                     setSelected(null);
