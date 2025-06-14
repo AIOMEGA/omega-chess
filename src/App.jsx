@@ -705,6 +705,7 @@ function App() {
     undo: treeUndo,
     redo: treeRedo,
     removeLatest: treeRemoveLatest,
+    exitAnalysis: treeExitAnalysis,
     root,
     analysisRoot,
   } = useMoveTree({
@@ -732,6 +733,15 @@ function App() {
     playerColor === 'white'
       ? { row, col }
       : { row: 7 - row, col: 7 - col };
+
+  const restoreFromNode = (node) => {
+    if (!node) return;
+    setBoard(cloneBoard(node.board));
+    setTurn(node.turn);
+    setKingState(deepClone(node.kingState));
+    setCastlingRights(deepClone(node.castlingRights));
+    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+  };
 
   const coordLabel = (row, col) => {
     return `${String.fromCharCode(97 + col)}${8 - row}`;
@@ -856,15 +866,12 @@ function App() {
     setSelected(sel);
   };
 
-  const deactivateAnalysis = () => {
+  const exitAnalysis = () => {
     if (mode !== 'analysis') return;
+    treeExitAnalysis();
     const saved = analysisSavedRef.current;
     if (saved) {
-      setBoard(saved.board);
-      setTurn(saved.turn);
-      setKingState(deepClone(saved.kingState));
-      setCastlingRights(deepClone(saved.castlingRights));
-      setEnPassantTarget(saved.enPassantTarget || null);
+      restoreFromNode(saved);
       setLastKingMove(saved.lastKingMove || null);
     }
     setMode('play');
@@ -878,6 +885,7 @@ function App() {
   // can return to play mode and keep the incoming board state.
   const forceExitAnalysis = () => {
     if (modeRef.current !== 'analysis') return;
+    treeExitAnalysis();
     setMode('play');
     modeRef.current = 'play';
     setAnalysisHistory([]);
@@ -1040,11 +1048,7 @@ function App() {
     if (mode === 'analysis') {
       if (analysisIndex < 0) return;
       const node = treeUndo();
-      setBoard(cloneBoard(node.board));
-      setTurn(node.turn);
-      setKingState(deepClone(node.kingState));
-      setCastlingRights(deepClone(node.castlingRights));
-      setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+      restoreFromNode(node);
       setAnalysisIndex(analysisIndex - 1);
       return;
     }
@@ -1054,11 +1058,7 @@ function App() {
       historyIndex === moveHistory.length - 1 &&
       moveHistory[historyIndex].turn === playerColor;
     const node = treeUndo();
-    setBoard(cloneBoard(node.board));
-    setTurn(node.turn);
-    setKingState(deepClone(node.kingState));
-    setCastlingRights(deepClone(node.castlingRights));
-    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+    restoreFromNode(node);
     const newIndex = historyIndex - 1;
   
     setHistoryIndex(newIndex);
@@ -1089,22 +1089,14 @@ function App() {
     if (mode === 'analysis') {
       if (analysisIndex >= analysisHistory.length - 1) return;
       const node = treeRedo();
-      setBoard(cloneBoard(node.board));
-      setTurn(node.turn);
-      setKingState(deepClone(node.kingState));
-      setCastlingRights(deepClone(node.castlingRights));
-      setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+      restoreFromNode(node);
       setAnalysisIndex(analysisIndex + 1);
       return;
     }
 
     if (historyIndex >= moveHistory.length - 1) return;
     const node = treeRedo();
-    setBoard(cloneBoard(node.board));
-    setTurn(node.turn);
-    setKingState(deepClone(node.kingState));
-    setCastlingRights(deepClone(node.castlingRights));
-    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+    restoreFromNode(node);
     const newIndex = historyIndex + 1;
     setHistoryIndex(newIndex);
     historyIndexRef.current = newIndex;
@@ -1128,11 +1120,7 @@ function App() {
     setHistoryIndex(newIndex);
     historyIndexRef.current = newIndex;
 
-    setBoard(cloneBoard(node.board));
-    setTurn(node.turn);
-    setKingState(deepClone(node.kingState));
-    setCastlingRights(deepClone(node.castlingRights));
-    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+    restoreFromNode(node);
     setReviewMode(false);
     reviewModeRef.current = false;
   };
@@ -1151,11 +1139,7 @@ function App() {
       const target = move ? move.node : analysisRoot;
       if (!target) return;
       const node = treeJumpToNode(target);
-      setBoard(cloneBoard(node.board));
-      setTurn(node.turn);
-      setKingState(deepClone(node.kingState));
-      setCastlingRights(deepClone(node.castlingRights));
-      setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+      restoreFromNode(node);
       setAnalysisIndex(index);
       return;
     }
@@ -1164,11 +1148,7 @@ function App() {
     const target = move ? move.node : root;
     if (!target) return;
     const node = treeJumpToNode(target);
-    setBoard(cloneBoard(node.board));
-    setTurn(node.turn);
-    setKingState(deepClone(node.kingState));
-    setCastlingRights(deepClone(node.castlingRights));
-    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+    restoreFromNode(node);
     setHistoryIndex(index);
     historyIndexRef.current = index;
 
@@ -2109,7 +2089,7 @@ function App() {
             <button onClick={() => setDrawInfo({ type: 'agreement', message: 'Draw by agreement.' })}>Draw</button>
             <button onClick={() => setResignInfo({ winner: turn === 'white' ? 'black' : 'white' })}>Resign</button>
             {mode === 'analysis' && (
-              <button onClick={deactivateAnalysis}>Exit Analysis</button>
+              <button onClick={exitAnalysis}>Exit Analysis</button>
             )}
             {reviewMode && mode === 'play' && (
               <div style={{ color: 'yellow', fontWeight: 'bold' }}>Review Mode</div>
