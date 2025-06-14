@@ -974,22 +974,8 @@ function App() {
       }
     }
 
-    node = treeRecordMove({
-      board: cloneBoard(move.board),
-      turn: move.turn === 'white' ? 'black' : 'white',
-      kingState: move.kingState ? deepClone(move.kingState) : deepClone(kingState),
-      castlingRights: move.castlingRights
-        ? deepClone(move.castlingRights)
-        : deepClone(castlingRights),
-      enPassantTarget: move.enPassantTarget ? { ...move.enPassantTarget } : null,
-      move,
-    });
-
-    setBoard(cloneBoard(node.board));
-    setTurn(node.turn);
-    setKingState(deepClone(node.kingState));
-    setCastlingRights(deepClone(node.castlingRights));
-    setEnPassantTarget(node.enPassantTarget ? { ...node.enPassantTarget } : null);
+    // The board state has already been recorded above. Returning the node
+    // from that call keeps the tree in sync without duplicating entries.
   };
 
   // Keep a ref to the latest recordMove so BroadcastChannel handler
@@ -1588,6 +1574,7 @@ function App() {
         if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
         setEnPassantTarget(move.enPassantTarget || null);
         if (recordMoveRef.current) recordMoveRef.current(move, true);
+        setSelected(null); // clear any local selection after opponent move
         setReviewMode(false);
         reviewModeRef.current = false;
         suppressRef.current = false;
