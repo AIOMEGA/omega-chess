@@ -5,6 +5,8 @@ import { initialBoard, pieceImages } from './constants/pieces.js';
 import useBroadcastChannel from './hooks/useBroadcastChannel.js';
 import useMoveHistory from './hooks/useMoveHistory.js';
 import boardHighlights from './utils/boardHighlights.js';
+import PromotionOverlay from './components/PromotionOverlay.jsx';
+import SummonOverlay from './components/SummonOverlay.jsx';
 import {
   getValidPawnMoves,
   getValidRookMoves,
@@ -15,8 +17,6 @@ import {
   filterLegalMoves,
   hasAnyLegalMoves,
   isKingInCheck,
-  performSummon,
-  performPromotion,
 } from './logic/moveRules.js';
 import {
   cloneBoard,
@@ -196,28 +196,6 @@ function App() {
 
     setStatusMessage('');
   }, [board, turn]);
-
-  /* history handlers moved to useMoveHistory */
-  
-  const pieceImagesMap = {
-    white: {
-      '♕': 'wQ.svg',
-      '♘': 'wN.svg',
-      '♖': 'wR.svg',
-      '♗': 'wB.svg',
-    },
-    black: {
-      '♛': 'bQ.svg',
-      '♞': 'bN.svg',
-      '♜': 'bR.svg',
-      '♝': 'bB.svg',
-    }
-  };  
-
-  const summonSymbols =
-  summonOptions?.color === 'white'
-    ? ['♕', '♘', '♖', '♗']
-    : ['♛', '♞', '♜', '♝'];
 
   // Main click handler for board squares. Handles selecting pieces, moving
   // them, triggering promotions and summoning UIs as well as castling logic.
@@ -893,157 +871,38 @@ function App() {
         })()}
       </svg>
 
-      {summonOptions && (
-        <div className="summon-ui" onClick={(e) => e.stopPropagation()}>
-          {[summonOptions.col - 1, summonOptions.col + 1]
-            .filter(c => {
-              const neighborPiece = board[summonOptions.row]?.[c];
-              if (!neighborPiece) return true;
-              return !isSameTeam(neighborPiece, summonOptions.color === 'white' ? '♙' : '♟');
-            })
-            .filter(c => c >= 0 && c < 8) // prevent out-of-bounds
-            .map((c) => (
-              <div
-                key={c}
-                className="summon-column"
-                style={{
-                  left: `${toDisplayCoords(summonOptions.row, c).col * 105 + 4}px`,
-                  top: `${overlayTop(summonOptions.row)}px`,
-                }}
-              >
-                {summonSymbols.map((symbol, i) => (
-                  <img
-                    key={i}
-                    src={`/src/assets/pieces/${pieceImagesMap[summonOptions.color][symbol]}`}
-                    alt={symbol}
-                    style={{ width: '80px', height: '80px', margin: '5px', cursor: 'pointer' }}
-                    onClick={() => {
-                      const newBoard = performSummon(board, summonOptions.row, c, summonOptions.color, symbol);
-
-                      const newKingState = {
-                        ...kingState,
-                        [summonOptions.color]: {
-                          hasSummoned: true,
-                          needsReturn: true,
-                          returnedHome: false,
-                        }
-                      };
-                      setKingState(newKingState);
-
-                      // then snapshot the move after updating
-
-                      const move = {
-                        from: lastKingMove
-                          ? { row: lastKingMove.fromRow, col: lastKingMove.fromCol }
-                          : { row: summonOptions.row, col: summonOptions.col },
-                        to: { row: summonOptions.row, col: summonOptions.col },
-                        piece: summonOptions.color === 'white' ? '♔' : '♚',
-                        summon: {
-                          piece: symbol,
-                          to: { row: summonOptions.row, col: c }
-                        },
-                        board: cloneBoard(newBoard),
-                        turn: turn,
-                        kingState: deepClone(newKingState),
-                        enPassantTarget,
-                        castlingRights: deepClone(castlingRights),
-                      };
-
-                      // THEN update game state
-                      
-                      recordMove(move);
-                      setBoard(newBoard);
-                      setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-                      setSummonOptions(null);
-                      setLastKingMove(null);
-                      setSelectedSquare(null);                 
-
-                    }}
-                  />
-                ))}
-                <button onClick={(e) => {
-                  e.stopPropagation();
-
-                  const move = {
-                    from: lastKingMove
-                      ? { row: lastKingMove.fromRow, col: lastKingMove.fromCol }
-                      : { row: summonOptions.row, col: summonOptions.col },
-                    to: { row: summonOptions.row, col: summonOptions.col },
-                    piece: summonOptions.color === 'white' ? '♔' : '♚',
-                    board: cloneBoard(board),
-                    turn: turn,
-                    kingState: deepClone(kingState),
-                    enPassantTarget,
-                    castlingRights: deepClone(castlingRights),
-                  };
-
-                  recordMove(move);
-                  setSummonOptions(null);
-                  setLastKingMove(null);
-                  setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-                  setSelectedSquare(null);
-                }}>X</button>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {promotionOptions && (
-        <div className="summon-ui" onClick={(e) => e.stopPropagation()}>
-          {[promotionOptions.col].map((c) => (
-            <div
-              key={c}
-              className="summon-column"
-              style={{
-                left: `${toDisplayCoords(promotionOptions.row, c).col * 105 + 4}px`,
-                top: `${overlayTop(promotionOptions.row)}px`,
-              }}
-            >
-              {(promotionOptions.color === 'white' ? ['♕', '♘', '♖', '♗'] : ['♛', '♞', '♜', '♝']).map((symbol, i) => (
-                <img
-                  key={i}
-                  src={`/src/assets/pieces/${pieceImagesMap[promotionOptions.color][symbol]}`}
-                  alt={symbol}
-                  style={{ width: '80px', height: '80px', margin: '5px', cursor: 'pointer' }}
-
-                  onClick={() => {
-                    const newBoard = performPromotion(
-                      board,
-                      promotionOptions.row,
-                      promotionOptions.col,
-                      promotionOptions.fromRow,
-                      promotionOptions.fromCol,
-                      promotionOptions.color,
-                      symbol
-                    );
-
-                    const move = {
-                      from: { row: promotionOptions.fromRow, col: promotionOptions.fromCol },
-                      to: { row: promotionOptions.row, col: promotionOptions.col },
-                      piece: promotionOptions.color === 'white' ? '♙' : '♟',
-                      promotion: symbol,
-                      board: cloneBoard(newBoard),
-                      turn: turn,
-                      enPassantTarget,
-                      castlingRights: deepClone(castlingRights),
-                    };
-
-                    recordMove(move);
-                    setBoard(newBoard);
-                    setPromotionOptions(null);
-                    setSelectedSquare(null);
-                    setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-                  }}
-                />
-              ))}
-              <button onClick={() => {
-                setPromotionOptions(null);
-                setSelectedSquare(null);
-              }}>X</button>
-            </div>
-          ))}
-        </div>
-      )}
+      <SummonOverlay
+        board={board}
+        summonOptions={summonOptions}
+        kingState={kingState}
+        setKingState={setKingState}
+        lastKingMove={lastKingMove}
+        setLastKingMove={setLastKingMove}
+        castlingRights={castlingRights}
+        enPassantTarget={enPassantTarget}
+        turn={turn}
+        recordMove={recordMove}
+        setBoard={setBoard}
+        setSummonOptions={setSummonOptions}
+        setSelectedSquare={setSelectedSquare}
+        setTurn={setTurn}
+        overlayTop={overlayTop}
+        toDisplayCoords={toDisplayCoords}
+      />
+      <PromotionOverlay
+        board={board}
+        promotionOptions={promotionOptions}
+        castlingRights={castlingRights}
+        enPassantTarget={enPassantTarget}
+        turn={turn}
+        recordMove={recordMove}
+        setBoard={setBoard}
+        setPromotionOptions={setPromotionOptions}
+        setSelectedSquare={setSelectedSquare}
+        setTurn={setTurn}
+        overlayTop={overlayTop}
+        toDisplayCoords={toDisplayCoords}
+      />
 
       {statusMessage && (
         <div style={{ color: 'white', marginBottom: '8px', fontWeight: 'bold' }}>
