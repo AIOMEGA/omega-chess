@@ -1,648 +1,37 @@
 import { useState, useEffect, useRef } from 'react';
 import './App.css';
 import './assets/logo.png'
-
-// Unicode pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
-// Starting layout for a new game
-const initialBoard = [
-  ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'],
-  ['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟'],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  ['♙', '♙', '♙', '♙', '♙', '♙', '♙', '♙'],
-  ['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖'],
-];
-
-// Map each Unicode piece to its SVG image file. Assets sourced from https://github.com/lichess-org/lila/tree/master/public/piece
-const pieceImages = {
-  '♙': 'wP.svg',
-  '♟': 'bP.svg',
-  '♘': 'wN.svg',
-  '♞': 'bN.svg',
-  '♖': 'wR.svg',
-  '♜': 'bR.svg',
-  '♗': 'wB.svg',
-  '♝': 'bB.svg',
-  '♕': 'wQ.svg',
-  '♛': 'bQ.svg',
-  '♔': 'wK.svg',
-  '♚': 'bK.svg',
-};
-
-// Lists of piece symbols to quickly determine piece color
-const WHITE_PIECES = ['♙', '♘', '♗', '♖', '♕', '♔'];
-const BLACK_PIECES = ['♟', '♞', '♝', '♜', '♛', '♚'];
-
-// Utility helpers reused across the app
-const isWhitePiece = (p) => WHITE_PIECES.includes(p);
-const isBlackPiece = (p) => BLACK_PIECES.includes(p);
-const isEnemyPiece = (p, isWhite) =>
-  isWhite ? isBlackPiece(p) : isWhitePiece(p);
-const isSameTeam = (p1, p2) =>
-  (isWhitePiece(p1) && isWhitePiece(p2)) ||
-  (isBlackPiece(p1) && isBlackPiece(p2));
-
-// Shallow clone used when we want a new board reference
-const cloneBoard = (board) => board.map((r) => [...r]);
-// Utility to deep clone objects (used for history snapshots)
-const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
-
-// Serialize board position plus turn/castling/en passant to detect repetitions
-function boardKey(board, turn, castlingRights, enPassantTarget) {
-  const map = {
-    '♙': 'P',
-    '♟': 'p',
-    '♘': 'N',
-    '♞': 'n',
-    '♖': 'R',
-    '♜': 'r',
-    '♗': 'B',
-    '♝': 'b',
-    '♕': 'Q',
-    '♛': 'q',
-    '♔': 'K',
-    '♚': 'k',
-  };
-  const rows = board.map((row) => {
-    let str = '';
-    let empty = 0;
-    for (const piece of row) {
-      if (piece === '') {
-        empty += 1;
-      } else {
-        if (empty > 0) {
-          str += empty;
-          empty = 0;
-        }
-        str += map[piece] || piece;
-      }
-    }
-    if (empty > 0) str += empty;
-    return str;
-  });
-  const boardStr = rows.join('/');
-  const rights = [
-    castlingRights.white.kingSide ? 'K' : '',
-    castlingRights.white.queenSide ? 'Q' : '',
-    castlingRights.black.kingSide ? 'k' : '',
-    castlingRights.black.queenSide ? 'q' : '',
-  ]
-  .join('') || '-';
-const ep = enPassantTarget
-  ? String.fromCharCode(97 + enPassantTarget.col) + (8 - enPassantTarget.row)
-  : '-';
-const turnChar = turn === 'white' ? 'w' : 'b';
-return `${boardStr} ${turnChar} ${rights} ${ep}`;
-}
-
-function getValidPawnMoves(board, row, col, piece, enPassantTarget) {
-  const isWhite = piece === '♙';
-
-  const validMoves = [];
-
-  const forward = isWhite ? -1 : 1;
-  const startRow = isWhite ? 6 : 1;
-
-  // All 8 directions
-  const directions = [
-    [-1, -1], [-1, 0], [-1, 1],
-    [ 0, -1],          [ 0, 1],
-    [ 1, -1], [ 1, 0], [ 1, 1],
-  ];
-
-  for (let [dr, dc] of directions) {
-    const newRow = row + dr;
-    const newCol = col + dc;
-    if (newRow < 0 || newRow > 7 || newCol < 0 || newCol > 7) continue;
-
-    const target = board[newRow][newCol];
-
-    const isDiagonal = Math.abs(dr) === 1 && Math.abs(dc) === 1;
-
-    if (target === '') {
-      // Empty square — allow in any direction
-      validMoves.push([newRow, newCol]);
-    } else if (isDiagonal && isEnemyPiece(target, isWhite)) {
-      // Capture diagonally only
-      validMoves.push([newRow, newCol]);
-    }
-  }
-
-  // 2-square forward move if not blocked
-  const oneStep = row + forward;
-  const twoStep = row + 2 * forward;
-  if (row === startRow &&
-      board[oneStep]?.[col] === '' &&
-      board[twoStep]?.[col] === '') {
-    validMoves.push([twoStep, col]);
-  }
-
-  // En passant
-  for (let dc of [-1, 1]) {
-    const newRow = row + forward;
-    const newCol = col + dc;
-    if (enPassantTarget &&
-        enPassantTarget.row === newRow &&
-        enPassantTarget.col === newCol) {
-      validMoves.push([newRow, newCol]);
-    }
-  }
-
-  return validMoves;
-}
-
-// Rook movement for Omega chess. Allows normal rook moves and a special
-// 'hop over one piece' mechanic implemented via blockerFound logic.
-function getValidRookMoves(board, row, col, piece) {
-  const isWhite = piece === '♖';
-
-  const validMoves = [];
-  const directions = [
-    [-1, 0], // up
-    [1, 0],  // down
-    [0, -1], // left
-    [0, 1],  // right
-  ];
-
-  for (const [dr, dc] of directions) {
-    let r = row + dr;
-    let c = col + dc;
-    let blockerFound = false;
-
-    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
-      const target = board[r][c];
-
-      if (!blockerFound) {
-        if (target === '') {
-          validMoves.push([r, c]); // normal movement
-        } else {
-          if (isEnemyPiece(target, isWhite)) {
-            validMoves.push([r, c]); // capture the blocker
-          }
-
-          blockerFound = true; // now check one square past
-        }
-      } else {
-        const behindPiece = board[r][c];
-        if (behindPiece === '' || isEnemyPiece(behindPiece, isWhite)) {
-          validMoves.push([r, c]); // jump move: land only directly behind
-        }
-
-        break; // only allowed to hop 1 piece
-      }
-
-      r += dr;
-      c += dc;
-    }
-  }
-
-  return validMoves;
-}
-
-// Queen movement expands the normal Rook + Bishop movement to the Omega Chess "line of sight" logic
-// which uses pixel based ray tracing to see any tile on the board so long as it's not blocked by another piece.
-function getValidQueenMoves(board, row, col, piece) {
-  const isWhite = piece === '♕';
-
-  const validMoves = [];
-
-  const isEnemy = (target) => isEnemyPiece(target, isWhite);
-
-  // Ray cast across SVG board to check that no piece lies between
-  // the queen and target square when using sliding moves.
-  function hasLineOfSight(toRow, toCol) {
-    const squareSize = 105;
-  
-    const startX = col * squareSize + 52.5 + 4;
-    const startY = row * squareSize + 52.5 + 4;
-    const endX = toCol * squareSize + 52.5 + 4;
-    const endY = toRow * squareSize + 52.5 + 4;
-  
-    const dx = endX - startX;
-    const dy = endY - startY;
-    const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 48); // higher = smoother
-  
-    let prevTile = null;
-  
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const x = startX + dx * t;
-      const y = startY + dy * t;
-  
-      const tileRow = Math.floor(y / squareSize);
-      const tileCol = Math.floor(x / squareSize);
-      const tileId = `${tileRow}-${tileCol}`;
-  
-      if (
-        tileId !== prevTile &&
-        !(tileRow === row && tileCol === col) &&
-        !(tileRow === toRow && tileCol === toCol)
-      ) {
-        if (board[tileRow]?.[tileCol] !== '') return false;
-      }
-  
-      prevTile = tileId;
-    }
-  
-    return true;
-  }
-  
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      if (r === row && c === col) continue;
-
-      if (hasLineOfSight(r, c)) {
-        const target = board[r][c];
-        if (target === '' || isEnemy(target)) {
-          validMoves.push([r, c]);
-        }
-      }
-    }
-  }
-
-  return validMoves;
-}
-
-// Knight moves use a 5x5 mask that avoids the centre "3x3" area, creating
-// the extended omnidirectional movement of Omega chess knights.
-function getValidKnightMoves(board, row, col, piece) {
-  const isWhite = piece === '♘';
-
-  const validMoves = [];
-
-  for (let dr = -2; dr <= 2; dr++) {
-    for (let dc = -2; dc <= 2; dc++) {
-      if (dr === 0 && dc === 0) continue; // skip current square
-      if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) continue; // skip 3x3 core
-
-      const r = row + dr;
-      const c = col + dc;
-      if (r < 0 || r >= 8 || c < 0 || c >= 8) continue;
-
-      const target = board[r][c];
-      if (target === '') {
-        validMoves.push([r, c]);
-      } else if (isEnemyPiece(target, isWhite)) {
-        validMoves.push([r, c]);
-      }
-    }
-  }
-
-  return validMoves;
-}
-
-// Bishop moves combine standard diagonals with a one-step king-like move in
-// any direction, no more exclusively light or dark square bishops as now they can be both.
-function getValidBishopMoves(board, row, col, piece) {
-  const isWhite = piece === '♗';
-
-  const validMoves = [];
-
-  const isEnemy = (target) => isEnemyPiece(target, isWhite);
-
-  const directions = [
-    [-1, -1], [-1, 0], [-1, 1],
-    [ 0, -1],          [ 0, 1],
-    [ 1, -1], [ 1, 0], [ 1, 1],
-  ];
-
-  // Bishop-style infinite diagonals (4 directions only)
-  for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
-    let r = row + dr;
-    let c = col + dc;
-    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
-      const target = board[r][c];
-      if (target === '') {
-        validMoves.push([r, c]);
-      } else {
-        if (isEnemy(target)) validMoves.push([r, c]);
-        break;
-      }
-      r += dr;
-      c += dc;
-    }
-  }
-
-  // King-style 1-tile in any direction (orthogonal + diagonal)
-  for (const [dr, dc] of directions) {
-    const r = row + dr;
-    const c = col + dc;
-    if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-      const target = board[r][c];
-      if (target === '' || isEnemy(target)) {
-        validMoves.push([r, c]);
-      }
-    }
-  }
-
-  return validMoves;
-}
-
-// Utility used for check detection. It scans all opposing pieces and asks each
-// piece's move generator if it could capture the target square.
-function isSquareAttacked(board, row, col, attackerIsWhite) {
-  const isEnemy = (piece) =>
-    attackerIsWhite ? isWhitePiece(piece) : isBlackPiece(piece);
-
-  // Helper to reuse your move checkers (just reuse your logic here!)
-  const getAllEnemyMoves = (r, c, piece) => {
-    if (piece === '♙' || piece === '♟') return getValidPawnMoves(board, r, c, piece);
-    if (piece === '♘' || piece === '♞') return getValidKnightMoves(board, r, c, piece);
-    if (piece === '♗' || piece === '♝') return getValidBishopMoves(board, r, c, piece);
-    if (piece === '♖' || piece === '♜') return getValidRookMoves(board, r, c, piece);
-    if (piece === '♕' || piece === '♛') return getValidQueenMoves(board, r, c, piece);
-    if (piece === '♔' || piece === '♚') return [];
-    return [];
-  };
-  
-
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = board[r][c];
-      if (!isEnemy(piece)) continue;
-
-      const moves = getAllEnemyMoves(r, c, piece);
-      for (const [mr, mc] of moves) {
-        if (mr === row && mc === col) return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-// Returns the positions of any pieces checking the king of the given color
-function getCheckingPieces(board, color) {
-  const kingPos = findKingPosition(board, color === 'black');
-  if (!kingPos) return null;
-
-  const attackerIsWhite = color === 'black';
-  const attackers = [];
-
-  const isEnemy = (piece) =>
-    attackerIsWhite ? isWhitePiece(piece) : isBlackPiece(piece);
-
-  const getAllEnemyMoves = (r, c, piece) => {
-    if (piece === '♙' || piece === '♟') return getValidPawnMoves(board, r, c, piece, null);
-    if (piece === '♘' || piece === '♞') return getValidKnightMoves(board, r, c, piece);
-    if (piece === '♗' || piece === '♝') return getValidBishopMoves(board, r, c, piece);
-    if (piece === '♖' || piece === '♜') return getValidRookMoves(board, r, c, piece);
-    if (piece === '♕' || piece === '♛') return getValidQueenMoves(board, r, c, piece);
-    if (piece === '♔' || piece === '♚') return [];
-    return [];
-  };
-
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = board[r][c];
-      if (!isEnemy(piece)) continue;
-
-      const moves = getAllEnemyMoves(r, c, piece);
-      for (const [mr, mc] of moves) {
-        if (mr === kingPos.row && mc === kingPos.col) {
-          attackers.push({ row: r, col: c });
-          break;
-        }
-      }
-    }
-  }
-
-  if (attackers.length === 0) return null;
-  return { king: kingPos, attackers };
-}
-
-// Helper used for check logic to locate a specific colour king on the board.
-function findKingPosition(board, isWhite) {
-  const kingSymbol = isWhite ? '♚' : '♔'; // enemy king
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      if (board[r][c] === kingSymbol) {
-        return { row: r, col: c };
-      }
-    }
-  }
-  return null;
-}
-
-// Wrapper around isSquareAttacked that first finds the king of the given color
-// and determines if any opposing piece can attack that square.
-function isKingInCheck(board, color) {
-  const kingPos = findKingPosition(board, color === 'black');
-  if (!kingPos) return false;
-  return isSquareAttacked(
-    board,
-    kingPos.row,
-    kingPos.col,
-    color === 'black'
-  );
-}
-
-// Helper used when checking move legality. It plays a move on a cloned board
-// and returns the resulting board state. Handles en passant captures.
-function simulateMove(board, fromRow, fromCol, toRow, toCol, piece, enPassantTarget) {
-  const newBoard = cloneBoard(board);
-
-  if (
-    (piece === '♙' || piece === '♟') &&
-    enPassantTarget &&
-    toRow === enPassantTarget.row &&
-    toCol === enPassantTarget.col &&
-    board[toRow][toCol] === ''
-  ) {
-    const captureRow = fromRow;
-    newBoard[captureRow][toCol] = '';
-  }
-
-  newBoard[toRow][toCol] = piece;
-  newBoard[fromRow][fromCol] = '';
-  return newBoard;
-}
-
-// After generating pseudo-legal moves we simulate each one to ensure the
-// current player's king would not remain in check. Castling moves are
-// handled specially here as well.
-function filterLegalMoves(moves, board, fromRow, fromCol, piece, enPassantTarget) {
-  const color = WHITE_PIECES.includes(piece) ? 'white' : 'black';
-  const legal = [];
-  for (const move of moves) {
-    if (!Array.isArray(move)) {
-      legal.push(move);
-      continue;
-    }
-    if (typeof move[0] !== 'number' || typeof move[1] !== 'number') {
-      // e.g. ['summon', row, col] -- special moves that don't require simulation
-      legal.push(move);
-      continue;
-    }
-    const [r, c] = move;
-    let newBoard;
-    if ((piece === '♔' || piece === '♚') && Math.abs(c - fromCol) === 2 && r === fromRow) {
-      const isWhite = piece === '♔';
-      const kingSide = c > fromCol;
-      const rookFromCol = kingSide ? 7 : 0;
-      const rookToCol = kingSide ? c - 1 : c + 1;
-      newBoard = cloneBoard(board);
-      newBoard[fromRow][fromCol] = '';
-      newBoard[r][c] = piece;
-      newBoard[fromRow][rookFromCol] = '';
-      newBoard[fromRow][rookToCol] = isWhite ? '♖' : '♜';
-    } else {
-      newBoard = simulateMove(board, fromRow, fromCol, r, c, piece, enPassantTarget);
-    }
-    if (!isKingInCheck(newBoard, color)) legal.push(move);
-  }
-  return legal;
-}
-
-// Iterates all pieces of a given color and checks if at least one legal move
-// exists. Used for stalemate/checkmate detection.
-function hasAnyLegalMoves(board, color, kingState, enPassantTarget, castlingRights) {
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = board[r][c];
-      if (color === 'white' && !WHITE_PIECES.includes(piece)) continue;
-      if (color === 'black' && !BLACK_PIECES.includes(piece)) continue;
-
-      let moves = [];
-      if (piece === '♙' || piece === '♟')
-        moves = getValidPawnMoves(board, r, c, piece, enPassantTarget);
-      else if (piece === '♖' || piece === '♜')
-        moves = getValidRookMoves(board, r, c, piece);
-      else if (piece === '♕' || piece === '♛')
-        moves = getValidQueenMoves(board, r, c, piece);
-      else if (piece === '♘' || piece === '♞')
-        moves = getValidKnightMoves(board, r, c, piece);
-      else if (piece === '♗' || piece === '♝')
-        moves = getValidBishopMoves(board, r, c, piece);
-      else if (piece === '♔' || piece === '♚')
-        moves = getValidKingMoves(board, r, c, piece, kingState[color], castlingRights);
-
-      const legal = filterLegalMoves(moves, board, r, c, piece, enPassantTarget);
-      if (legal.length > 0) return true;
-    }
-  }
-  return false;
-}
-
-// Main king move generator. Handles normal one-square movement while ensuring
-// the king doesn't move into check, includes custom summoning logic and checks
-// whether castling is available.
-function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
-  const isWhite = piece === '♔';
-  const isEnemy = (target) => isEnemyPiece(target, isWhite);
-
-  const directions = [
-    [-1, -1], [-1, 0], [-1, 1],
-    [ 0, -1],          [ 0, 1],
-    [ 1, -1], [ 1, 0], [ 1, 1],
-  ];
-
-  const validMoves = [];
-
-  for (const [dr, dc] of directions) {
-    const r = row + dr;
-    const c = col + dc;
-    if (r < 0 || r >= 8 || c < 0 || c >= 8) continue;
-
-    const target = board[r][c];
-    if (target === '' || isEnemy(target)) {
-      // Simulate the move
-      const simulatedBoard = cloneBoard(board);
-      simulatedBoard[row][col] = ''; // Clear old king position
-      simulatedBoard[r][c] = piece; // Move king to new position
-    
-      const wouldBeInCheck = isSquareAttacked(simulatedBoard, r, c, !isWhite);
-
-      const enemyKingPos = findKingPosition(board, isWhite);
-      const tooCloseToEnemyKing =
-        enemyKingPos &&
-        Math.abs(enemyKingPos.row - r) <= 1 &&
-        Math.abs(enemyKingPos.col - c) <= 1;
-
-      if (!wouldBeInCheck && !tooCloseToEnemyKing) {
-        validMoves.push([r, c]);
-      }
-    }
-    
-  }
-
-  // Summoning check
-  const enemyRow = isWhite ? 0 : 7;
-
-  const canSummon =
-    row === enemyRow &&
-    !kingState.hasSummoned &&
-    (!kingState.needsReturn || kingState.returnedHome);
-
-  if (canSummon) {
-    for (const offset of [-1, 1]) {
-      const c = col + offset;
-      if (c >= 0 && c < 8 && board[row][c] === '') {
-        validMoves.push(['summon', row, c]); // Special indicator
-      }
-    }
-  }
-
-  // --- Castling ---
-  const color = isWhite ? 'white' : 'black';
-  const rights = castlingRights?.[color];
-  const homeRow = isWhite ? 7 : 0;
-
-  // Ensure king is on its original square
-  if (row === homeRow && col === 4 && rights) {
-    // Kingside
-    if (
-      rights.kingSide &&
-      board[homeRow][5] === '' &&
-      board[homeRow][6] === '' &&
-      !isSquareAttacked(board, homeRow, 4, !isWhite) &&
-      !isSquareAttacked(board, homeRow, 5, !isWhite) &&
-      !isSquareAttacked(board, homeRow, 6, !isWhite)
-    ) {
-      validMoves.push([homeRow, 6]);
-    }
-
-    // Queenside
-    if (
-      rights.queenSide &&
-      board[homeRow][3] === '' &&
-      board[homeRow][2] === '' &&
-      board[homeRow][1] === '' &&
-      !isSquareAttacked(board, homeRow, 4, !isWhite) &&
-      !isSquareAttacked(board, homeRow, 3, !isWhite) &&
-      !isSquareAttacked(board, homeRow, 2, !isWhite)
-    ) {
-      validMoves.push([homeRow, 2]);
-    }
-  }
-
-  return validMoves;
-}
-
-// Places a new piece next to the enemy back rank king as part of the king's
-// summoning ability. Returns a cloned board with the piece added.
-function performSummon(board, row, col, color, pieceType = '♕') {
-  const newBoard = cloneBoard(board);
-  newBoard[row][col] = pieceType;
-  return newBoard;
-}
-
-// Handles pawn promotion. Removes the pawn from its original square and places
-// the chosen piece on the target square.
-function performPromotion(board, row, col, fromRow, fromCol, color, piece) {
-  const newBoard = deepClone(board);
-  newBoard[fromRow][fromCol] = '';
-  newBoard[row][col] = piece;
-  return newBoard;
-}
+import { initialBoard, pieceImages } from './constants/pieces.js';
+import useBroadcastChannel from './hooks/useBroadcastChannel.js';
+import useMoveHistory from './hooks/useMoveHistory.js';
+import boardHighlights from './utils/boardHighlights.js';
+import PromotionOverlay from './components/PromotionOverlay.jsx';
+import SummonOverlay from './components/SummonOverlay.jsx';
+import {
+  getValidPawnMoves,
+  getValidRookMoves,
+  getValidQueenMoves,
+  getValidKnightMoves,
+  getValidBishopMoves,
+  getValidKingMoves,
+  filterLegalMoves,
+} from './logic/moveRules.js';
+import {
+  cloneBoard,
+  deepClone,
+  isWhitePiece,
+  isBlackPiece,
+  isSameTeam,
+} from './utils/helpers.js';
+import {
+  hasAnyLegalMoves,
+  isKingInCheck,
+  boardKey,
+} from './logic/gameStatus.js';
 
 function App() {
   // Current board state as an 8x8 array of piece symbols
   const [board, setBoard] = useState(initialBoard);
-  // Currently selected square {row, col} or null
-  const [selected, setSelected] = useState(null);
   // If a pawn advanced two squares last move this holds the square that can be captured en passant
   const [enPassantTarget, setEnPassantTarget] = useState(null); // e.g. { row: 3, col: 4 }
   // Tracks each king's special summoning status
@@ -663,10 +52,6 @@ function App() {
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
   // Whose turn it is to move
   const [turn, setTurn] = useState('white');
-  // Array of past moves used for undo/redo functionality
-  const [moveHistory, setMoveHistory] = useState([]);
-  // Index pointer into moveHistory for current view
-  const [historyIndex, setHistoryIndex] = useState(-1); // index of current move
   // Display helper text such as "check" notices
   const [statusMessage, setStatusMessage] = useState('');
   // Holds winner color when checkmate occurs
@@ -678,113 +63,15 @@ function App() {
   const [resignInfo, setResignInfo] = useState(null); // { winner: 'white'|'black' }
   // Counts half-moves since the last capture or pawn move
   const [, setHalfmoveClock] = useState(0); // half-move counter for fifty-move rule
-  // Track occurrences of board positions for repetition detection
-  const positionCountsRef = useRef({});
-  // Persistent board annotations (circles, arrows, lines)
-  const [annotations, setAnnotations] = useState([]);
-  // Ref to board container for coordinate calculations
-  const boardRef = useRef(null);
-  // Ref tracking right-click drag state
-  const rightDragRef = useRef({ dragging: false });
 
-  const bcRef = useRef(null);
-  const instanceIdRef = useRef(Math.random().toString(36).slice(2));
   const suppressRef = useRef(false);
   const recordMoveRef = useRef(null); // holds latest recordMove implementation
   const modeRef = useRef('play');
   const [reviewMode, setReviewMode] = useState(false); // true when viewing past moves
   const reviewModeRef = useRef(false); // latest review mode state
-  const moveHistoryRef = useRef([]); // latest moveHistory for remote handlers
-  const historyIndexRef = useRef(-1); // latest historyIndex
-  const remoteUndoRef = useRef(null); // latest remote undo handler
-
-  const squareSize = 105;
-  const boardOffset = 4; // matches board border
-
-  const toDisplayCoords = (row, col) =>
-    playerColor === 'white'
-      ? { row, col }
-      : { row: 7 - row, col: 7 - col };
-  const fromDisplayCoords = (row, col) =>
-    playerColor === 'white'
-      ? { row, col }
-      : { row: 7 - row, col: 7 - col };
 
   const coordLabel = (row, col) => {
     return `${String.fromCharCode(97 + col)}${8 - row}`;
-  };
-
-  const overlayTop = (row) => {
-    const dispRow = toDisplayCoords(row, 0).row;
-    return dispRow <= 3 ? dispRow * squareSize : dispRow * squareSize - 315;
-  };
-
-  const getSquareFromEvent = (e) => {
-    const rect = boardRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left - boardOffset;
-    const y = e.clientY - rect.top - boardOffset;
-    const displayCol = Math.floor(x / squareSize);
-    const displayRow = Math.floor(y / squareSize);
-    if (displayCol < 0 || displayCol > 7 || displayRow < 0 || displayRow > 7)
-      return null;
-    return fromDisplayCoords(displayRow, displayCol);
-  };
-
-  const toggleAnnotation = (ann) => {
-    setAnnotations((prev) => {
-      const match = prev.findIndex((a) => {
-        if (a.type !== ann.type) return false;
-        if (ann.type === 'circle') {
-          return a.row === ann.row && a.col === ann.col;
-        }
-        return (
-          a.from.row === ann.from.row &&
-          a.from.col === ann.from.col &&
-          a.to.row === ann.to.row &&
-          a.to.col === ann.to.col
-        );
-      });
-      if (match !== -1) {
-        const copy = prev.slice();
-        copy.splice(match, 1);
-        // console.debug('Removed annotation', ann);
-        return copy;
-      }
-      // console.debug('Added annotation', ann);
-      return [...prev, ann];
-    });
-  };
-
-  const handleBoardMouseDown = (e) => {
-    if (e.button !== 2) return;
-    e.preventDefault();
-    const sq = getSquareFromEvent(e);
-    if (!sq) return;
-    rightDragRef.current = { dragging: true, start: sq, shift: e.shiftKey };
-    // console.debug('Right mouse down', { square: sq, shift: e.shiftKey });
-  };
-
-  const handleBoardMouseUp = (e) => {
-    if (e.button !== 2) return;
-    e.preventDefault();
-    const data = rightDragRef.current;
-    if (!data.dragging) return;
-    const sq = getSquareFromEvent(e);
-    if (!sq) {
-      rightDragRef.current.dragging = false;
-      return;
-    }
-    if (data.start.row === sq.row && data.start.col === sq.col) {
-      // console.debug('Toggle circle', sq);
-      toggleAnnotation({ type: 'circle', row: sq.row, col: sq.col });
-    } else if (data.shift) {
-      // console.debug('Toggle line', { from: data.start, to: sq });
-      toggleAnnotation({ type: 'line', from: data.start, to: sq });
-    } else {
-      // console.debug('Toggle arrow', { from: data.start, to: sq });
-      toggleAnnotation({ type: 'arrow', from: data.start, to: sq });
-    }
-    rightDragRef.current.dragging = false;
   };
   
   // --- Analysis mode ---
@@ -808,8 +95,7 @@ function App() {
     localStorage.setItem('playerColor', random);
   }, []);
   const [mode, setMode] = useState('play'); // 'play' or 'analysis'
-  const [analysisHistory, setAnalysisHistory] = useState([]);
-  const [analysisIndex, setAnalysisIndex] = useState(-1);
+  // Analysis move history managed by useMoveHistory hook
   const analysisSavedRef = useRef(null);
 
   const activateAnalysis = (sel) => {
@@ -830,7 +116,7 @@ function App() {
     setMode('analysis');
     setAnalysisHistory([]);
     setAnalysisIndex(-1);
-    setSelected(sel);
+    setSelectedSquare(sel);
   };
 
   const deactivateAnalysis = () => {
@@ -847,7 +133,7 @@ function App() {
     setMode('play');
     setAnalysisHistory([]);
     setAnalysisIndex(-1);
-    setSelected(null);
+    setSelectedSquare(null);
   };
 
   // Exit analysis without restoring the saved position. Used when
@@ -859,7 +145,7 @@ function App() {
     modeRef.current = 'play';
     setAnalysisHistory([]);
     setAnalysisIndex(-1);
-    setSelected(null);
+    setSelectedSquare(null);
     analysisSavedRef.current = null;
   };
   
@@ -874,76 +160,12 @@ function App() {
     // console.log('boardKey', key, 'count', 1);
   }, []);
 
-  // Helper to push a move onto the history stack. If we have undone moves,
-  // they are sliced off before the new move is appended.
-  const recordMove = (move, forcePlay = false) => {
-    if (mode === 'analysis' && !forcePlay) {
-      const newHistory = analysisHistory.slice(0, analysisIndex + 1);
-      newHistory.push(move);
-      setAnalysisHistory(newHistory);
-      setAnalysisIndex(newHistory.length - 1);
-      return;
-    }
-    const baseHistory = forcePlay
-      ? moveHistoryRef.current
-      : moveHistory.slice(0, historyIndex + 1);
-
-    const newHistory = [...baseHistory, move];
-    setMoveHistory(newHistory);
-    moveHistoryRef.current = newHistory;
-    setHistoryIndex(newHistory.length - 1);
-    historyIndexRef.current = newHistory.length - 1;
-    
-    if (!suppressRef.current) {
-      bcRef.current?.postMessage({ type: 'move', move, senderId: instanceIdRef.current });
-    }
-
-    if (mode !== 'analysis' || forcePlay) {
-      const isPawnMove = move.piece === '♙' || move.piece === '♟';
-      const isCapture = !!move.captured;
-      setHalfmoveClock((hc) => {
-        const newClock = isPawnMove || isCapture ? 0 : hc + 1;
-        if (newClock >= 100) {
-          setDrawInfo({ type: 'fifty', message: 'Draw by fifty-move rule.' });
-        }
-        return newClock;
-      });
-
-      const key = boardKey(
-        move.board,
-        move.turn === 'white' ? 'black' : 'white',
-        move.castlingRights,
-        move.enPassantTarget
-      );
-      const counts = positionCountsRef.current;
-      const count = (counts[key] || 0) + 1;
-      counts[key] = count;
-      // console.log('boardKey', key, 'count', count);
-      if (count >= 3) {
-        setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
-      }
-    }
-  };
-
-  // Keep a ref to the latest recordMove so BroadcastChannel handler
-  // always invokes the current logic even though it was bound once
-  useEffect(() => {
-    recordMoveRef.current = recordMove;
-  });
+  // useMoveHistory manages move history and undo/redo functionality
 
   // Keep current mode available for BroadcastChannel listeners
   useEffect(() => {
     modeRef.current = mode;
   });
-
-  // --- Hooks ---
-  // Ref so we can auto-scroll the move list when new moves are added
-  const moveListRef = useRef(null);
-  useEffect(() => {
-    if (moveListRef.current) {
-      moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
-    }
-  }, [historyIndex, analysisIndex, mode]);
 
   // Watch board/turn changes to show check/checkmate/draw messages
   useEffect(() => {
@@ -976,253 +198,6 @@ function App() {
 
     setStatusMessage('');
   }, [board, turn]);
-
-  const undoMove = () => {
-    if (mode === 'analysis') {
-      if (analysisIndex < 0) return;
-      const newIndex = analysisIndex - 1;
-      if (newIndex >= 0) {
-        const prev = analysisHistory[newIndex];
-        setBoard(prev.board);
-        setTurn(prev.turn === 'white' ? 'black' : 'white');
-        if (prev.kingState) setKingState(deepClone(prev.kingState));
-        if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
-        setEnPassantTarget(prev.enPassantTarget || null);
-      } else if (analysisSavedRef.current) {
-        setBoard(cloneBoard(analysisSavedRef.current.board));
-        setTurn(analysisSavedRef.current.turn);
-        setKingState(deepClone(analysisSavedRef.current.kingState));
-        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
-        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
-      }
-      setAnalysisIndex(newIndex);
-      return;
-    }
-
-    if (historyIndex < 0) return;
-    const isOwnLast =
-      historyIndex === moveHistory.length - 1 &&
-      moveHistory[historyIndex].turn === playerColor;
-    const newIndex = historyIndex - 1;
-  
-    if (newIndex >= 0) {
-      const prev = moveHistory[newIndex];
-      setBoard(prev.board);
-      setTurn(prev.turn === 'white' ? 'black' : 'white');
-      if (prev.kingState) {
-        setKingState(deepClone(prev.kingState));
-      }
-      if (prev.castlingRights) {
-        setCastlingRights(deepClone(prev.castlingRights));
-      }
-      setEnPassantTarget(prev.enPassantTarget || null);
-    } else {
-      // If going before the first move, reset everything
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
-  
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
-
-    if (isOwnLast) {
-      setReviewMode(false);
-      reviewModeRef.current = false;
-    } else {
-      setReviewMode(true);
-      reviewModeRef.current = true;
-    }
-
-    if (isOwnLast) {
-      const newHistory = moveHistory.slice(0, -1);
-      setMoveHistory(newHistory);
-      moveHistoryRef.current = newHistory;
-      if (!suppressRef.current) {
-        bcRef.current?.postMessage({
-          type: 'undo',
-          senderId: instanceIdRef.current,
-        });
-      }
-    }
-  };
-  
-  const redoMove = () => {
-    if (mode === 'analysis') {
-      if (analysisIndex >= analysisHistory.length - 1) return;
-      const newIndex = analysisIndex + 1;
-      const next = analysisHistory[newIndex];
-      setBoard(next.board);
-      setTurn(next.turn === 'white' ? 'black' : 'white');
-      if (next.kingState) setKingState(deepClone(next.kingState));
-      if (next.castlingRights) setCastlingRights(deepClone(next.castlingRights));
-      setEnPassantTarget(next.enPassantTarget || null);
-      setAnalysisIndex(newIndex);
-      return;
-    }
-
-    if (historyIndex >= moveHistory.length - 1) return;
-    const newIndex = historyIndex + 1;
-    const next = moveHistory[newIndex];
-    setBoard(next.board);
-    setTurn(next.turn === 'white' ? 'black' : 'white');
-    if (next.kingState) {
-      setKingState(deepClone(next.kingState));
-    }
-    if (next.castlingRights) {
-      setCastlingRights(deepClone(next.castlingRights));
-    }
-    setEnPassantTarget(next.enPassantTarget || null);
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
-
-    const reviewing = newIndex < moveHistory.length - 1;
-    setReviewMode(reviewing);
-    reviewModeRef.current = reviewing;
-  };
-
-  const handleRemoteUndo = () => {
-    const currentHistory = moveHistoryRef.current;
-    if (currentHistory.length === 0) return;
-
-    const newHistory = currentHistory.slice(0, -1);
-    const newIndex = newHistory.length - 1;
-
-    setMoveHistory(newHistory);
-    moveHistoryRef.current = newHistory;
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
-
-    if (newIndex >= 0) {
-      const prev = newHistory[newIndex];
-      setBoard(cloneBoard(prev.board));
-      setTurn(prev.turn === 'white' ? 'black' : 'white');
-      if (prev.kingState) setKingState(deepClone(prev.kingState));
-      if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
-      setEnPassantTarget(prev.enPassantTarget || null);
-    } else {
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
-    setReviewMode(false);
-    reviewModeRef.current = false;
-  };
-
-  // Keep latest history values for BroadcastChannel handlers
-  useEffect(() => {
-    moveHistoryRef.current = moveHistory;
-    historyIndexRef.current = historyIndex;
-    remoteUndoRef.current = handleRemoteUndo;
-    reviewModeRef.current = reviewMode;
-  });
-
-  const jumpToMove = (index) => {
-    if (mode === 'analysis') {
-      const move = analysisHistory[index];
-      if (move) {
-        setBoard(move.board);
-        setTurn(move.turn === 'white' ? 'black' : 'white');
-        if (move.kingState) setKingState(deepClone(move.kingState));
-        if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
-        setEnPassantTarget(move.enPassantTarget || null);
-      } else if (analysisSavedRef.current) {
-        setBoard(cloneBoard(analysisSavedRef.current.board));
-        setTurn(analysisSavedRef.current.turn);
-        setKingState(deepClone(analysisSavedRef.current.kingState));
-        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
-        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
-      }
-      setAnalysisIndex(index);
-      return;
-    }
-    
-    const move = moveHistory[index];
-    if (move) {
-      setBoard(move.board);
-      setTurn(move.turn === 'white' ? 'black' : 'white');
-      if (move.kingState) {
-        setKingState(deepClone(move.kingState));
-      }
-      if (move.castlingRights) {
-        setCastlingRights(deepClone(move.castlingRights));
-      }
-      setEnPassantTarget(move.enPassantTarget || null);
-    } else {
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
-    setHistoryIndex(index);
-    historyIndexRef.current = index;
-
-    const reviewing = index < moveHistory.length - 1;
-    setReviewMode(reviewing);
-    reviewModeRef.current = reviewing;
-  };
-  
-  const pieceImagesMap = {
-    white: {
-      '♕': 'wQ.svg',
-      '♘': 'wN.svg',
-      '♖': 'wR.svg',
-      '♗': 'wB.svg',
-    },
-    black: {
-      '♛': 'bQ.svg',
-      '♞': 'bN.svg',
-      '♜': 'bR.svg',
-      '♝': 'bB.svg',
-    }
-  };  
-
-  const summonSymbols =
-  summonOptions?.color === 'white'
-    ? ['♕', '♘', '♖', '♗']
-    : ['♛', '♞', '♜', '♝'];
-
-  // --- Highlight helpers ---
-  const activeHist = mode === 'analysis' ? analysisHistory : moveHistory;
-  const activeIndex = mode === 'analysis' ? analysisIndex : historyIndex;
-  const lastMove = activeIndex >= 0 ? activeHist[activeIndex] : null;
-  const lastFromKey = lastMove ? `${lastMove.from.row}-${lastMove.from.col}` : null;
-  const lastToKey = lastMove ? `${lastMove.to.row}-${lastMove.to.col}` : null;
-
-  const checkSquares = new Set();
-  const whiteCheck = getCheckingPieces(board, 'white');
-  if (whiteCheck) {
-    checkSquares.add(`${whiteCheck.king.row}-${whiteCheck.king.col}`);
-    whiteCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
-  }
-  const blackCheck = getCheckingPieces(board, 'black');
-  if (blackCheck) {
-    checkSquares.add(`${blackCheck.king.row}-${blackCheck.king.col}`);
-    blackCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
-  }
 
   // Main click handler for board squares. Handles selecting pieces, moving
   // them, triggering promotions and summoning UIs as well as castling logic.
@@ -1258,33 +233,33 @@ function App() {
       setSummonOptions(null);
       setLastKingMove(null);
       setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-      setSelected(null);
+      setSelectedSquare(null);
       return; // Exit early to prevent selection re-trigger
     }
 
-    // Clicked selected piece again? Deselect
-    if (selected && selected.row === row && selected.col === col) {
-      setSelected(null);
+    // Clicked selectedSquare piece again? Deselect
+    if (selectedSquare && selectedSquare.row === row && selectedSquare.col === col) {
+      setSelectedSquare(null);
       return;
     }
 
     // Selecting a piece
-    if (!selected) {
+    if (!selectedSquare) {
       if (piece !== '') {
         const pieceIsWhite = isWhitePiece(piece);
         if ((turn === 'white' && pieceIsWhite) || (turn === 'black' && !pieceIsWhite)) {
-          setSelected({ row, col });
+          setSelectedSquare({ row, col });
         }
       }
       return;
     }
 
-    const selectedPiece = board[selected.row][selected.col];
+    const selectedPiece = board[selectedSquare.row][selectedSquare.col];
     const targetPiece = board[row][col];
 
     // Prevent capturing own piece
     if (targetPiece && isSameTeam(selectedPiece, targetPiece)) {
-      setSelected({ row, col });
+      setSelectedSquare({ row, col });
       return;
     }
 
@@ -1294,32 +269,32 @@ function App() {
     // Movement logic
 
     if (selectedPiece === '♙' || selectedPiece === '♟') {
-      validMoves = getValidPawnMoves(board, selected.row, selected.col, selectedPiece, enPassantTarget);
+      validMoves = getValidPawnMoves(board, selectedSquare.row, selectedSquare.col, selectedPiece, enPassantTarget);
     }
     if (selectedPiece === '♖' || selectedPiece === '♜') {
-      validMoves = getValidRookMoves(board, selected.row, selected.col, selectedPiece);
+      validMoves = getValidRookMoves(board, selectedSquare.row, selectedSquare.col, selectedPiece);
     }
     if (selectedPiece === '♕' || selectedPiece === '♛') {
-      validMoves = getValidQueenMoves(board, selected.row, selected.col, selectedPiece);
+      validMoves = getValidQueenMoves(board, selectedSquare.row, selectedSquare.col, selectedPiece);
     }
     if (selectedPiece === '♘' || selectedPiece === '♞') {
-      validMoves = getValidKnightMoves(board, selected.row, selected.col, selectedPiece);
+      validMoves = getValidKnightMoves(board, selectedSquare.row, selectedSquare.col, selectedPiece);
     }
     if (selectedPiece === '♗' || selectedPiece === '♝') {
-      validMoves = getValidBishopMoves(board, selected.row, selected.col, selectedPiece);
+      validMoves = getValidBishopMoves(board, selectedSquare.row, selectedSquare.col, selectedPiece);
     }
     if (selectedPiece === '♔' || selectedPiece === '♚') {
       const colorKey = selectedPiece === '♔' ? 'white' : 'black';
       validMoves = getValidKingMoves(
         board,
-        selected.row,
-        selected.col,
+        selectedSquare.row,
+        selectedSquare.col,
         selectedPiece,
         kingState[colorKey],
         castlingRights
       );
     }
-    validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, selectedPiece, enPassantTarget);
+    validMoves = filterLegalMoves(validMoves, board, selectedSquare.row, selectedSquare.col, selectedPiece, enPassantTarget);
 
     
     const isValidMove = validMoves.some(([r, c]) => r === row && c === col);
@@ -1327,13 +302,13 @@ function App() {
     if (isValidMove) {
       if (reviewMode) {
         setStatusMessage('Return to the latest move to resume play.');
-        setSelected(null);
+        setSelectedSquare(null);
         return;
       }
       const newBoard = cloneBoard(board);
       const movingPawn = selectedPiece;
     
-      const movedPiece = board[selected.row][selected.col];
+      const movedPiece = board[selectedSquare.row][selectedSquare.col];
       const isPawn = movedPiece === '♙' || movedPiece === '♟';
       const targetRow = row;
 
@@ -1341,15 +316,15 @@ function App() {
       const isBlackPromotion = isPawn && movedPiece === '♟' && targetRow === 7;
 
       // Castling move
-      if ((selectedPiece === '♔' || selectedPiece === '♚') && Math.abs(col - selected.col) === 2 && row === selected.row) {
+      if ((selectedPiece === '♔' || selectedPiece === '♚') && Math.abs(col - selectedSquare.col) === 2 && row === selectedSquare.row) {
         // Determine castling side and move the rook accordingly
         const isWhite = selectedPiece === '♔';
-        const kingSide = col > selected.col;
+        const kingSide = col > selectedSquare.col;
         const rookFromCol = kingSide ? 7 : 0;
         const rookToCol = kingSide ? col - 1 : col + 1;
 
         newBoard[row][col] = selectedPiece;
-        newBoard[selected.row][selected.col] = '';
+        newBoard[selectedSquare.row][selectedSquare.col] = '';
         newBoard[row][rookFromCol] = '';
         newBoard[row][rookToCol] = isWhite ? '♖' : '♜';
 
@@ -1362,7 +337,7 @@ function App() {
         setBoard(newBoard);
 
         const move = {
-          from: { row: selected.row, col: selected.col },
+          from: { row: selectedSquare.row, col: selectedSquare.col },
           to: { row, col },
           piece: selectedPiece,
           castle: kingSide ? 'O-O' : 'O-O-O',
@@ -1375,7 +350,7 @@ function App() {
 
         recordMove(move);
         setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-        setSelected(null);
+        setSelectedSquare(null);
         return;
       }
 
@@ -1389,8 +364,8 @@ function App() {
 
       if (selectedPiece === '♔' || selectedPiece === '♚') {
         setLastKingMove({
-          fromRow: selected.row,
-          fromCol: selected.col,
+          fromRow: selectedSquare.row,
+          fromCol: selectedSquare.col,
           toRow: row,
           toCol: col,
         });
@@ -1400,8 +375,8 @@ function App() {
         setPromotionOptions({
           row,
           col,
-          fromRow: selected.row,
-          fromCol: selected.col,
+          fromRow: selectedSquare.row,
+          fromCol: selectedSquare.col,
           color: movedPiece === '♙' ? 'white' : 'black'
         });
         setEnPassantTarget(null);
@@ -1415,20 +390,20 @@ function App() {
         row === enPassantTarget.row &&
         col === enPassantTarget.col
       ) {
-        const captureRow = selected.row;
+        const captureRow = selectedSquare.row;
         newBoard[captureRow][col] = ''; // Remove the passed pawn
       }
     
       // Set new en passant target
-      const diff = Math.abs(row - selected.row);
+      const diff = Math.abs(row - selectedSquare.row);
       let newEnPassantTarget = null;
       if ((movingPawn === '♙' || movingPawn === '♟') && diff === 2) {
-        newEnPassantTarget = { row: (row + selected.row) / 2, col };
+        newEnPassantTarget = { row: (row + selectedSquare.row) / 2, col };
       }
       setEnPassantTarget(newEnPassantTarget);
 
       newBoard[row][col] = selectedPiece;
-      newBoard[selected.row][selected.col] = '';
+      newBoard[selectedSquare.row][selectedSquare.col] = '';
 
       const updatedRights = { ...castlingRights };
       if (selectedPiece === '♔') {
@@ -1437,13 +412,13 @@ function App() {
       } else if (selectedPiece === '♚') {
         updatedRights.black.kingSide = false;
         updatedRights.black.queenSide = false;
-      } else if (selectedPiece === '♖' && selected.row === 7 && selected.col === 0) {
+      } else if (selectedPiece === '♖' && selectedSquare.row === 7 && selectedSquare.col === 0) {
         updatedRights.white.queenSide = false;
-      } else if (selectedPiece === '♖' && selected.row === 7 && selected.col === 7) {
+      } else if (selectedPiece === '♖' && selectedSquare.row === 7 && selectedSquare.col === 7) {
         updatedRights.white.kingSide = false;
-      } else if (selectedPiece === '♜' && selected.row === 0 && selected.col === 0) {
+      } else if (selectedPiece === '♜' && selectedSquare.row === 0 && selectedSquare.col === 0) {
         updatedRights.black.queenSide = false;
-      } else if (selectedPiece === '♜' && selected.row === 0 && selected.col === 7) {
+      } else if (selectedPiece === '♜' && selectedSquare.row === 0 && selectedSquare.col === 7) {
         updatedRights.black.kingSide = false;
       }
       if (targetPiece === '♖') {
@@ -1487,7 +462,7 @@ function App() {
 
       if (!shouldWaitForSummon) {
         const move = {
-          from: { row: selected.row, col: selected.col },
+          from: { row: selectedSquare.row, col: selectedSquare.col },
           to: { row, col },
           piece: selectedPiece,
           captured: board[row][col] || null,
@@ -1560,12 +535,12 @@ function App() {
    
     }
 
-    setSelected(null);
+    setSelectedSquare(null);
   };
   // Used to reset the game after checkmate
   const resetGame = () => {
     setBoard(cloneBoard(initialBoard));
-    setSelected(null);
+    setSelectedSquare(null);
     setEnPassantTarget(null);
     setKingState({
       white: { hasSummoned: false, needsReturn: false, returnedHome: false },
@@ -1595,17 +570,14 @@ function App() {
     positionCountsRef.current = { [key]: 1 };
     // console.log('boardKey', key, 'count', 1);
     if (!suppressRef.current) {
-      bcRef.current?.postMessage({ type: 'reset', senderId: instanceIdRef.current });
+      sendCustom('reset');
     }
   };
 
-  useEffect(() => {
-    const bc = new BroadcastChannel('omega-chess');
-    bcRef.current = bc;
-    bc.onmessage = (event) => {
-      const { type, move, senderId } = event.data;
-      if (senderId === instanceIdRef.current) return;
-      if (type === 'move') {
+  const { sendMove, sendUndo, sendJump: _sendJump, sendCustom } = useBroadcastChannel(
+    'omega-chess',
+    {
+      onMove: (move) => {
         suppressRef.current = true;
         if (modeRef.current === 'analysis') {
           forceExitAnalysis();
@@ -1619,24 +591,101 @@ function App() {
         setReviewMode(false);
         reviewModeRef.current = false;
         suppressRef.current = false;
-      } else if (type === 'undo') {
+      },
+      onUndo: () => {
         suppressRef.current = true;
         if (modeRef.current === 'analysis') {
           forceExitAnalysis();
         }
         if (remoteUndoRef.current) remoteUndoRef.current();
         suppressRef.current = false;
-      } else if (type === 'reset') {
-        suppressRef.current = true;
-        if (modeRef.current === 'analysis') {
-          forceExitAnalysis();
+      },
+      onCustom: ({ type }) => {
+        if (type === 'reset') {
+          suppressRef.current = true;
+          if (modeRef.current === 'analysis') {
+            forceExitAnalysis();
+          }
+          resetGame();
+          suppressRef.current = false;
         }
-        resetGame();
-        suppressRef.current = false;
-      }
-    };
-    return () => bc.close();
-  }, []);
+      },
+    }
+  );
+  void _sendJump;
+
+  const {
+    moveHistory,
+    setMoveHistory,
+    historyIndex,
+    setHistoryIndex,
+    analysisHistory,
+    setAnalysisHistory,
+    analysisIndex,
+    setAnalysisIndex,
+    recordMove,
+    undoMove,
+    redoMove,
+    jumpToMove,
+    remoteUndoRef,
+    positionCountsRef,
+  } = useMoveHistory({
+    initialBoard,
+    playerColor,
+    mode,
+    analysisSavedRef,
+    setBoard,
+    setTurn,
+    setKingState,
+    setCastlingRights,
+    setEnPassantTarget,
+    setReviewMode,
+    reviewMode,
+    reviewModeRef,
+    sendMove,
+    sendUndo,
+    suppressRef,
+    setHalfmoveClock,
+    setDrawInfo,
+    recordMoveRef,
+  });
+
+  const {
+    selectedSquare,
+    setSelectedSquare,
+    annotations,
+    legalMoves,
+    lastFromKey,
+    lastToKey,
+    checkSquares,
+    boardRef,
+    toDisplayCoords,
+    fromDisplayCoords,
+    overlayTop,
+    squareSize,
+    boardOffset,
+    handleBoardMouseDown,
+    handleBoardMouseUp,
+  } = boardHighlights({
+    board,
+    playerColor,
+    kingState,
+    enPassantTarget,
+    castlingRights,
+    mode,
+    moveHistory,
+    historyIndex,
+    analysisHistory,
+    analysisIndex,
+  });
+
+  // Ref so we can auto-scroll the move list when new moves are added
+  const moveListRef = useRef(null);
+  useEffect(() => {
+    if (moveListRef.current) {
+      moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+    }
+  }, [historyIndex, analysisIndex, mode]);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -1681,16 +730,6 @@ function App() {
       )}
       <div
         style={{ position: 'relative', width: '840px', height: '840px' }}
-      //   onClick={() => {
-      //   if (promotionOptions) {
-      //     setPromotionOptions(null);
-      //     setSelected(null); // <== Add this
-      //   }
-      //   if (summonOptions) {
-      //     setSummonOptions(null);
-      //     setSelected(null); // <== Add this
-      //   }
-      // }}
       >
       <svg
         width="840"
@@ -1771,29 +810,10 @@ function App() {
         }}
       >
 
-        {selected && (() => {
-          let validMoves = [];
-          const piece = board[selected.row][selected.col];
-          if (piece === '♙' || piece === '♟') validMoves = getValidPawnMoves(board, selected.row, selected.col, piece, enPassantTarget);
-          else if (piece === '♖' || piece === '♜') validMoves = getValidRookMoves(board, selected.row, selected.col, piece);
-          else if (piece === '♕' || piece === '♛') validMoves = getValidQueenMoves(board, selected.row, selected.col, piece);
-          else if (piece === '♘' || piece === '♞') validMoves = getValidKnightMoves(board, selected.row, selected.col, piece);
-          else if (piece === '♗' || piece === '♝') validMoves = getValidBishopMoves(board, selected.row, selected.col, piece);
-          else if (piece === '♔' || piece === '♚') {
-            const key = piece === '♔' ? 'white' : 'black';
-            validMoves = getValidKingMoves(
-              board,
-              selected.row,
-              selected.col,
-              piece,
-              kingState[key],
-              castlingRights
-            );
-          }
+        {selectedSquare && (() => {
+          const piece = board[selectedSquare.row][selectedSquare.col];
 
-          validMoves = filterLegalMoves(validMoves, board, selected.row, selected.col, piece, enPassantTarget);
-
-          return validMoves.map((move, i) => {
+          return legalMoves.map((move, i) => {
             if (!Array.isArray(move) || typeof move[0] !== 'number' || typeof move[1] !== 'number') return null;
           
             const [r, c] = move;
@@ -1804,6 +824,7 @@ function App() {
             const endY = disp.row * 105 + 52.5 + 4;
             if (isEnemy) {
               return (
+              //   Draws lines to each legal move a selected piece can make
               //   <line
               //   key={"line-" + i}
               //   x1={startX}
@@ -1852,157 +873,38 @@ function App() {
         })()}
       </svg>
 
-      {summonOptions && (
-        <div className="summon-ui" onClick={(e) => e.stopPropagation()}>
-          {[summonOptions.col - 1, summonOptions.col + 1]
-            .filter(c => {
-              const neighborPiece = board[summonOptions.row]?.[c];
-              if (!neighborPiece) return true;
-              return !isSameTeam(neighborPiece, summonOptions.color === 'white' ? '♙' : '♟');
-            })
-            .filter(c => c >= 0 && c < 8) // prevent out-of-bounds
-            .map((c) => (
-              <div
-                key={c}
-                className="summon-column"
-                style={{
-                  left: `${toDisplayCoords(summonOptions.row, c).col * 105 + 4}px`,
-                  top: `${overlayTop(summonOptions.row)}px`,
-                }}
-              >
-                {summonSymbols.map((symbol, i) => (
-                  <img
-                    key={i}
-                    src={`/src/assets/pieces/${pieceImagesMap[summonOptions.color][symbol]}`}
-                    alt={symbol}
-                    style={{ width: '80px', height: '80px', margin: '5px', cursor: 'pointer' }}
-                    onClick={() => {
-                      const newBoard = performSummon(board, summonOptions.row, c, summonOptions.color, symbol);
-
-                      const newKingState = {
-                        ...kingState,
-                        [summonOptions.color]: {
-                          hasSummoned: true,
-                          needsReturn: true,
-                          returnedHome: false,
-                        }
-                      };
-                      setKingState(newKingState);
-
-                      // then snapshot the move after updating
-
-                      const move = {
-                        from: lastKingMove
-                          ? { row: lastKingMove.fromRow, col: lastKingMove.fromCol }
-                          : { row: summonOptions.row, col: summonOptions.col },
-                        to: { row: summonOptions.row, col: summonOptions.col },
-                        piece: summonOptions.color === 'white' ? '♔' : '♚',
-                        summon: {
-                          piece: symbol,
-                          to: { row: summonOptions.row, col: c }
-                        },
-                        board: cloneBoard(newBoard),
-                        turn: turn,
-                        kingState: deepClone(newKingState),
-                        enPassantTarget,
-                        castlingRights: deepClone(castlingRights),
-                      };
-
-                      // THEN update game state
-                      
-                      recordMove(move);
-                      setBoard(newBoard);
-                      setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-                      setSummonOptions(null);
-                      setLastKingMove(null);
-                      setSelected(null);                 
-
-                    }}
-                  />
-                ))}
-                <button onClick={(e) => {
-                  e.stopPropagation();
-
-                  const move = {
-                    from: lastKingMove
-                      ? { row: lastKingMove.fromRow, col: lastKingMove.fromCol }
-                      : { row: summonOptions.row, col: summonOptions.col },
-                    to: { row: summonOptions.row, col: summonOptions.col },
-                    piece: summonOptions.color === 'white' ? '♔' : '♚',
-                    board: cloneBoard(board),
-                    turn: turn,
-                    kingState: deepClone(kingState),
-                    enPassantTarget,
-                    castlingRights: deepClone(castlingRights),
-                  };
-
-                  recordMove(move);
-                  setSummonOptions(null);
-                  setLastKingMove(null);
-                  setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-                  setSelected(null);
-                }}>X</button>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {promotionOptions && (
-        <div className="summon-ui" onClick={(e) => e.stopPropagation()}>
-          {[promotionOptions.col].map((c) => (
-            <div
-              key={c}
-              className="summon-column"
-              style={{
-                left: `${toDisplayCoords(promotionOptions.row, c).col * 105 + 4}px`,
-                top: `${overlayTop(promotionOptions.row)}px`,
-              }}
-            >
-              {(promotionOptions.color === 'white' ? ['♕', '♘', '♖', '♗'] : ['♛', '♞', '♜', '♝']).map((symbol, i) => (
-                <img
-                  key={i}
-                  src={`/src/assets/pieces/${pieceImagesMap[promotionOptions.color][symbol]}`}
-                  alt={symbol}
-                  style={{ width: '80px', height: '80px', margin: '5px', cursor: 'pointer' }}
-
-                  onClick={() => {
-                    const newBoard = performPromotion(
-                      board,
-                      promotionOptions.row,
-                      promotionOptions.col,
-                      promotionOptions.fromRow,
-                      promotionOptions.fromCol,
-                      promotionOptions.color,
-                      symbol
-                    );
-
-                    const move = {
-                      from: { row: promotionOptions.fromRow, col: promotionOptions.fromCol },
-                      to: { row: promotionOptions.row, col: promotionOptions.col },
-                      piece: promotionOptions.color === 'white' ? '♙' : '♟',
-                      promotion: symbol,
-                      board: cloneBoard(newBoard),
-                      turn: turn,
-                      enPassantTarget,
-                      castlingRights: deepClone(castlingRights),
-                    };
-
-                    recordMove(move);
-                    setBoard(newBoard);
-                    setPromotionOptions(null);
-                    setSelected(null);
-                    setTurn(prev => (prev === 'white' ? 'black' : 'white'));
-                  }}
-                />
-              ))}
-              <button onClick={() => {
-                setPromotionOptions(null);
-                setSelected(null); // <== Add this
-              }}>X</button>
-            </div>
-          ))}
-        </div>
-      )}
+      <SummonOverlay
+        board={board}
+        summonOptions={summonOptions}
+        kingState={kingState}
+        setKingState={setKingState}
+        lastKingMove={lastKingMove}
+        setLastKingMove={setLastKingMove}
+        castlingRights={castlingRights}
+        enPassantTarget={enPassantTarget}
+        turn={turn}
+        recordMove={recordMove}
+        setBoard={setBoard}
+        setSummonOptions={setSummonOptions}
+        setSelectedSquare={setSelectedSquare}
+        setTurn={setTurn}
+        overlayTop={overlayTop}
+        toDisplayCoords={toDisplayCoords}
+      />
+      <PromotionOverlay
+        board={board}
+        promotionOptions={promotionOptions}
+        castlingRights={castlingRights}
+        enPassantTarget={enPassantTarget}
+        turn={turn}
+        recordMove={recordMove}
+        setBoard={setBoard}
+        setPromotionOptions={setPromotionOptions}
+        setSelectedSquare={setSelectedSquare}
+        setTurn={setTurn}
+        overlayTop={overlayTop}
+        toDisplayCoords={toDisplayCoords}
+      />
 
       {statusMessage && (
         <div style={{ color: 'white', marginBottom: '8px', fontWeight: 'bold' }}>
@@ -2017,15 +919,15 @@ function App() {
           onClick={() => {
             if (promotionOptions) {
               setPromotionOptions(null);
-              setSelected(null);
+              setSelectedSquare(null);
             }
             if (summonOptions) {
               setSummonOptions(null);
-              setSelected(null);
+              setSelectedSquare(null);
             }
           }}
         >
-          {/* Your board rendering below */}
+          {/* Board rendering below */}
           <div className={`board${mode === 'analysis' ? ' analysis' : ''}`} style={{ zIndex: 1, position: 'relative' }}>
           {Array.from({ length: 8 }).map((_, dispRow) => (
               <div key={dispRow} className="row">
@@ -2033,7 +935,7 @@ function App() {
                   const { row: br, col: bc } = fromDisplayCoords(dispRow, dispCol);
                   const piece = board[br][bc];
                   const isDark = (br + bc) % 2 === 1;
-                  const isSelected = selected?.row === br && selected?.col === bc;
+                  const isSelected = selectedSquare?.row === br && selectedSquare?.col === bc;
 
                   const key = `${br}-${bc}`;
                   const isLastFrom = key === lastFromKey;
@@ -2305,4 +1207,4 @@ function App() {
 }
 
 export default App;
-// 1480 -> 1430
+// 1480 -> 1430 -> 2300
