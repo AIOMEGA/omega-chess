@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import './App.css';
 import './assets/logo.png'
+import { initialBoard, pieceImages } from './constants/pieces.js';
+import useBroadcastChannel from './hooks/useBroadcastChannel.js';
 import {
   getValidPawnMoves,
   getValidRookMoves,
@@ -23,12 +25,6 @@ import {
   isSameTeam,
   boardKey,
 } from './utils/helpers.js';
-import {
-  initialBoard,
-  pieceImages,
-  WHITE_PIECES,
-  BLACK_PIECES,
-} from './constants/pieces.js';
 
 function App() {
   // Current board state as an 8x8 array of piece symbols
@@ -79,8 +75,6 @@ function App() {
   // Ref tracking right-click drag state
   const rightDragRef = useRef({ dragging: false });
 
-  const bcRef = useRef(null);
-  const instanceIdRef = useRef(Math.random().toString(36).slice(2));
   const suppressRef = useRef(false);
   const recordMoveRef = useRef(null); // holds latest recordMove implementation
   const modeRef = useRef('play');
@@ -287,7 +281,7 @@ function App() {
     historyIndexRef.current = newHistory.length - 1;
     
     if (!suppressRef.current) {
-      bcRef.current?.postMessage({ type: 'move', move, senderId: instanceIdRef.current });
+      sendMove(move);
     }
 
     if (mode !== 'analysis' || forcePlay) {
@@ -439,10 +433,7 @@ function App() {
       setMoveHistory(newHistory);
       moveHistoryRef.current = newHistory;
       if (!suppressRef.current) {
-        bcRef.current?.postMessage({
-          type: 'undo',
-          senderId: instanceIdRef.current,
-        });
+        sendUndo();
       }
     }
   };
@@ -987,17 +978,14 @@ function App() {
     positionCountsRef.current = { [key]: 1 };
     // console.log('boardKey', key, 'count', 1);
     if (!suppressRef.current) {
-      bcRef.current?.postMessage({ type: 'reset', senderId: instanceIdRef.current });
+      sendCustom('reset');
     }
   };
 
-  useEffect(() => {
-    const bc = new BroadcastChannel('omega-chess');
-    bcRef.current = bc;
-    bc.onmessage = (event) => {
-      const { type, move, senderId } = event.data;
-      if (senderId === instanceIdRef.current) return;
-      if (type === 'move') {
+  const { sendMove, sendUndo, sendJump: _sendJump, sendCustom } = useBroadcastChannel(
+    'omega-chess',
+    {
+      onMove: (move) => {
         suppressRef.current = true;
         if (modeRef.current === 'analysis') {
           forceExitAnalysis();
@@ -1011,24 +999,28 @@ function App() {
         setReviewMode(false);
         reviewModeRef.current = false;
         suppressRef.current = false;
-      } else if (type === 'undo') {
+      },
+      onUndo: () => {
         suppressRef.current = true;
         if (modeRef.current === 'analysis') {
           forceExitAnalysis();
         }
         if (remoteUndoRef.current) remoteUndoRef.current();
         suppressRef.current = false;
-      } else if (type === 'reset') {
-        suppressRef.current = true;
-        if (modeRef.current === 'analysis') {
-          forceExitAnalysis();
+      },
+      onCustom: ({ type }) => {
+        if (type === 'reset') {
+          suppressRef.current = true;
+          if (modeRef.current === 'analysis') {
+            forceExitAnalysis();
+          }
+          resetGame();
+          suppressRef.current = false;
         }
-        resetGame();
-        suppressRef.current = false;
-      }
-    };
-    return () => bc.close();
-  }, []);
+      },
+    }
+  );
+  void _sendJump;
 
   return (
     <div style={{ position: 'relative' }}>

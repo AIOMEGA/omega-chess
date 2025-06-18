@@ -2,6 +2,7 @@
 
 import {
     cloneBoard,
+    deepClone,
     isWhitePiece,
     isBlackPiece,
     isEnemyPiece,
