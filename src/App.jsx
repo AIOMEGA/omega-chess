@@ -3,6 +3,7 @@ import './App.css';
 import './assets/logo.png'
 import { initialBoard, pieceImages } from './constants/pieces.js';
 import useBroadcastChannel from './hooks/useBroadcastChannel.js';
+import useMoveHistory from './hooks/useMoveHistory.js';
 import {
   getValidPawnMoves,
   getValidRookMoves,
@@ -51,10 +52,6 @@ function App() {
   const [lastKingMove, setLastKingMove] = useState(null); // { fromRow, fromCol, toRow, toCol }
   // Whose turn it is to move
   const [turn, setTurn] = useState('white');
-  // Array of past moves used for undo/redo functionality
-  const [moveHistory, setMoveHistory] = useState([]);
-  // Index pointer into moveHistory for current view
-  const [historyIndex, setHistoryIndex] = useState(-1); // index of current move
   // Display helper text such as "check" notices
   const [statusMessage, setStatusMessage] = useState('');
   // Holds winner color when checkmate occurs
@@ -66,8 +63,6 @@ function App() {
   const [resignInfo, setResignInfo] = useState(null); // { winner: 'white'|'black' }
   // Counts half-moves since the last capture or pawn move
   const [, setHalfmoveClock] = useState(0); // half-move counter for fifty-move rule
-  // Track occurrences of board positions for repetition detection
-  const positionCountsRef = useRef({});
   // Persistent board annotations (circles, arrows, lines)
   const [annotations, setAnnotations] = useState([]);
   // Ref to board container for coordinate calculations
@@ -80,9 +75,6 @@ function App() {
   const modeRef = useRef('play');
   const [reviewMode, setReviewMode] = useState(false); // true when viewing past moves
   const reviewModeRef = useRef(false); // latest review mode state
-  const moveHistoryRef = useRef([]); // latest moveHistory for remote handlers
-  const historyIndexRef = useRef(-1); // latest historyIndex
-  const remoteUndoRef = useRef(null); // latest remote undo handler
 
   const squareSize = 105;
   const boardOffset = 4; // matches board border
@@ -194,8 +186,7 @@ function App() {
     localStorage.setItem('playerColor', random);
   }, []);
   const [mode, setMode] = useState('play'); // 'play' or 'analysis'
-  const [analysisHistory, setAnalysisHistory] = useState([]);
-  const [analysisIndex, setAnalysisIndex] = useState(-1);
+  // Analysis move history managed by useMoveHistory hook
   const analysisSavedRef = useRef(null);
 
   const activateAnalysis = (sel) => {
@@ -260,76 +251,12 @@ function App() {
     // console.log('boardKey', key, 'count', 1);
   }, []);
 
-  // Helper to push a move onto the history stack. If we have undone moves,
-  // they are sliced off before the new move is appended.
-  const recordMove = (move, forcePlay = false) => {
-    if (mode === 'analysis' && !forcePlay) {
-      const newHistory = analysisHistory.slice(0, analysisIndex + 1);
-      newHistory.push(move);
-      setAnalysisHistory(newHistory);
-      setAnalysisIndex(newHistory.length - 1);
-      return;
-    }
-    const baseHistory = forcePlay
-      ? moveHistoryRef.current
-      : moveHistory.slice(0, historyIndex + 1);
-
-    const newHistory = [...baseHistory, move];
-    setMoveHistory(newHistory);
-    moveHistoryRef.current = newHistory;
-    setHistoryIndex(newHistory.length - 1);
-    historyIndexRef.current = newHistory.length - 1;
-    
-    if (!suppressRef.current) {
-      sendMove(move);
-    }
-
-    if (mode !== 'analysis' || forcePlay) {
-      const isPawnMove = move.piece === '♙' || move.piece === '♟';
-      const isCapture = !!move.captured;
-      setHalfmoveClock((hc) => {
-        const newClock = isPawnMove || isCapture ? 0 : hc + 1;
-        if (newClock >= 100) {
-          setDrawInfo({ type: 'fifty', message: 'Draw by fifty-move rule.' });
-        }
-        return newClock;
-      });
-
-      const key = boardKey(
-        move.board,
-        move.turn === 'white' ? 'black' : 'white',
-        move.castlingRights,
-        move.enPassantTarget
-      );
-      const counts = positionCountsRef.current;
-      const count = (counts[key] || 0) + 1;
-      counts[key] = count;
-      // console.log('boardKey', key, 'count', count);
-      if (count >= 3) {
-        setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
-      }
-    }
-  };
-
-  // Keep a ref to the latest recordMove so BroadcastChannel handler
-  // always invokes the current logic even though it was bound once
-  useEffect(() => {
-    recordMoveRef.current = recordMove;
-  });
+  // useMoveHistory manages move history and undo/redo functionality
 
   // Keep current mode available for BroadcastChannel listeners
   useEffect(() => {
     modeRef.current = mode;
   });
-
-  // --- Hooks ---
-  // Ref so we can auto-scroll the move list when new moves are added
-  const moveListRef = useRef(null);
-  useEffect(() => {
-    if (moveListRef.current) {
-      moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
-    }
-  }, [historyIndex, analysisIndex, mode]);
 
   // Watch board/turn changes to show check/checkmate/draw messages
   useEffect(() => {
@@ -363,210 +290,7 @@ function App() {
     setStatusMessage('');
   }, [board, turn]);
 
-  const undoMove = () => {
-    if (mode === 'analysis') {
-      if (analysisIndex < 0) return;
-      const newIndex = analysisIndex - 1;
-      if (newIndex >= 0) {
-        const prev = analysisHistory[newIndex];
-        setBoard(prev.board);
-        setTurn(prev.turn === 'white' ? 'black' : 'white');
-        if (prev.kingState) setKingState(deepClone(prev.kingState));
-        if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
-        setEnPassantTarget(prev.enPassantTarget || null);
-      } else if (analysisSavedRef.current) {
-        setBoard(cloneBoard(analysisSavedRef.current.board));
-        setTurn(analysisSavedRef.current.turn);
-        setKingState(deepClone(analysisSavedRef.current.kingState));
-        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
-        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
-      }
-      setAnalysisIndex(newIndex);
-      return;
-    }
-
-    if (historyIndex < 0) return;
-    const isOwnLast =
-      historyIndex === moveHistory.length - 1 &&
-      moveHistory[historyIndex].turn === playerColor;
-    const newIndex = historyIndex - 1;
-  
-    if (newIndex >= 0) {
-      const prev = moveHistory[newIndex];
-      setBoard(prev.board);
-      setTurn(prev.turn === 'white' ? 'black' : 'white');
-      if (prev.kingState) {
-        setKingState(deepClone(prev.kingState));
-      }
-      if (prev.castlingRights) {
-        setCastlingRights(deepClone(prev.castlingRights));
-      }
-      setEnPassantTarget(prev.enPassantTarget || null);
-    } else {
-      // If going before the first move, reset everything
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
-  
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
-
-    if (isOwnLast) {
-      setReviewMode(false);
-      reviewModeRef.current = false;
-    } else {
-      setReviewMode(true);
-      reviewModeRef.current = true;
-    }
-
-    if (isOwnLast) {
-      const newHistory = moveHistory.slice(0, -1);
-      setMoveHistory(newHistory);
-      moveHistoryRef.current = newHistory;
-      if (!suppressRef.current) {
-        sendUndo();
-      }
-    }
-  };
-  
-  const redoMove = () => {
-    if (mode === 'analysis') {
-      if (analysisIndex >= analysisHistory.length - 1) return;
-      const newIndex = analysisIndex + 1;
-      const next = analysisHistory[newIndex];
-      setBoard(next.board);
-      setTurn(next.turn === 'white' ? 'black' : 'white');
-      if (next.kingState) setKingState(deepClone(next.kingState));
-      if (next.castlingRights) setCastlingRights(deepClone(next.castlingRights));
-      setEnPassantTarget(next.enPassantTarget || null);
-      setAnalysisIndex(newIndex);
-      return;
-    }
-
-    if (historyIndex >= moveHistory.length - 1) return;
-    const newIndex = historyIndex + 1;
-    const next = moveHistory[newIndex];
-    setBoard(next.board);
-    setTurn(next.turn === 'white' ? 'black' : 'white');
-    if (next.kingState) {
-      setKingState(deepClone(next.kingState));
-    }
-    if (next.castlingRights) {
-      setCastlingRights(deepClone(next.castlingRights));
-    }
-    setEnPassantTarget(next.enPassantTarget || null);
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
-
-    const reviewing = newIndex < moveHistory.length - 1;
-    setReviewMode(reviewing);
-    reviewModeRef.current = reviewing;
-  };
-
-  const handleRemoteUndo = () => {
-    const currentHistory = moveHistoryRef.current;
-    if (currentHistory.length === 0) return;
-
-    const newHistory = currentHistory.slice(0, -1);
-    const newIndex = newHistory.length - 1;
-
-    setMoveHistory(newHistory);
-    moveHistoryRef.current = newHistory;
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
-
-    if (newIndex >= 0) {
-      const prev = newHistory[newIndex];
-      setBoard(cloneBoard(prev.board));
-      setTurn(prev.turn === 'white' ? 'black' : 'white');
-      if (prev.kingState) setKingState(deepClone(prev.kingState));
-      if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
-      setEnPassantTarget(prev.enPassantTarget || null);
-    } else {
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
-    setReviewMode(false);
-    reviewModeRef.current = false;
-  };
-
-  // Keep latest history values for BroadcastChannel handlers
-  useEffect(() => {
-    moveHistoryRef.current = moveHistory;
-    historyIndexRef.current = historyIndex;
-    remoteUndoRef.current = handleRemoteUndo;
-    reviewModeRef.current = reviewMode;
-  });
-
-  const jumpToMove = (index) => {
-    if (mode === 'analysis') {
-      const move = analysisHistory[index];
-      if (move) {
-        setBoard(move.board);
-        setTurn(move.turn === 'white' ? 'black' : 'white');
-        if (move.kingState) setKingState(deepClone(move.kingState));
-        if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
-        setEnPassantTarget(move.enPassantTarget || null);
-      } else if (analysisSavedRef.current) {
-        setBoard(cloneBoard(analysisSavedRef.current.board));
-        setTurn(analysisSavedRef.current.turn);
-        setKingState(deepClone(analysisSavedRef.current.kingState));
-        setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
-        setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
-      }
-      setAnalysisIndex(index);
-      return;
-    }
-    
-    const move = moveHistory[index];
-    if (move) {
-      setBoard(move.board);
-      setTurn(move.turn === 'white' ? 'black' : 'white');
-      if (move.kingState) {
-        setKingState(deepClone(move.kingState));
-      }
-      if (move.castlingRights) {
-        setCastlingRights(deepClone(move.castlingRights));
-      }
-      setEnPassantTarget(move.enPassantTarget || null);
-    } else {
-      setBoard(cloneBoard(initialBoard));
-      setTurn('white');
-      setKingState({
-        white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-        black: { hasSummoned: false, needsReturn: false, returnedHome: false },
-      });
-      setEnPassantTarget(null);
-      setCastlingRights({
-        white: { kingSide: true, queenSide: true },
-        black: { kingSide: true, queenSide: true },
-      });
-    }
-    setHistoryIndex(index);
-    historyIndexRef.current = index;
-
-    const reviewing = index < moveHistory.length - 1;
-    setReviewMode(reviewing);
-    reviewModeRef.current = reviewing;
-  };
+  /* history handlers moved to useMoveHistory */
   
   const pieceImagesMap = {
     white: {
@@ -587,25 +311,6 @@ function App() {
   summonOptions?.color === 'white'
     ? ['♕', '♘', '♖', '♗']
     : ['♛', '♞', '♜', '♝'];
-
-  // --- Highlight helpers ---
-  const activeHist = mode === 'analysis' ? analysisHistory : moveHistory;
-  const activeIndex = mode === 'analysis' ? analysisIndex : historyIndex;
-  const lastMove = activeIndex >= 0 ? activeHist[activeIndex] : null;
-  const lastFromKey = lastMove ? `${lastMove.from.row}-${lastMove.from.col}` : null;
-  const lastToKey = lastMove ? `${lastMove.to.row}-${lastMove.to.col}` : null;
-
-  const checkSquares = new Set();
-  const whiteCheck = getCheckingPieces(board, 'white');
-  if (whiteCheck) {
-    checkSquares.add(`${whiteCheck.king.row}-${whiteCheck.king.col}`);
-    whiteCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
-  }
-  const blackCheck = getCheckingPieces(board, 'black');
-  if (blackCheck) {
-    checkSquares.add(`${blackCheck.king.row}-${blackCheck.king.col}`);
-    blackCheck.attackers.forEach(a => checkSquares.add(`${a.row}-${a.col}`));
-  }
 
   // Main click handler for board squares. Handles selecting pieces, moving
   // them, triggering promotions and summoning UIs as well as castling logic.
@@ -1021,6 +726,72 @@ function App() {
     }
   );
   void _sendJump;
+
+  const {
+    moveHistory,
+    setMoveHistory,
+    historyIndex,
+    setHistoryIndex,
+    analysisHistory,
+    setAnalysisHistory,
+    analysisIndex,
+    setAnalysisIndex,
+    recordMove,
+    undoMove,
+    redoMove,
+    jumpToMove,
+    handleRemoteUndo,
+    moveHistoryRef,
+    historyIndexRef,
+    remoteUndoRef,
+    positionCountsRef,
+  } = useMoveHistory({
+    initialBoard,
+    playerColor,
+    mode,
+    analysisSavedRef,
+    setBoard,
+    setTurn,
+    setKingState,
+    setCastlingRights,
+    setEnPassantTarget,
+    setReviewMode,
+    reviewMode,
+    reviewModeRef,
+    sendMove,
+    sendUndo,
+    suppressRef,
+    setHalfmoveClock,
+    setDrawInfo,
+    recordMoveRef,
+  });
+
+  // Ref so we can auto-scroll the move list when new moves are added
+  const moveListRef = useRef(null);
+  useEffect(() => {
+    if (moveListRef.current) {
+      moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+    }
+  }, [historyIndex, analysisIndex, mode]);
+
+  // --- Highlight helpers ---
+  const activeHist = mode === 'analysis' ? analysisHistory : moveHistory;
+  const activeIndex = mode === 'analysis' ? analysisIndex : historyIndex;
+  const lastMove = activeIndex >= 0 ? activeHist[activeIndex] : null;
+  const lastFromKey = lastMove ? `${lastMove.from.row}-${lastMove.from.col}` : null;
+  const lastToKey = lastMove ? `${lastMove.to.row}-${lastMove.to.col}` : null;
+
+  const checkSquares = new Set();
+  const whiteCheck = getCheckingPieces(board, 'white');
+  if (whiteCheck) {
+    checkSquares.add(`${whiteCheck.king.row}-${whiteCheck.king.col}`);
+    whiteCheck.attackers.forEach((a) => checkSquares.add(`${a.row}-${a.col}`));
+  }
+  const blackCheck = getCheckingPieces(board, 'black');
+  if (blackCheck) {
+    checkSquares.add(`${blackCheck.king.row}-${blackCheck.king.col}`);
+    blackCheck.attackers.forEach((a) => checkSquares.add(`${a.row}-${a.col}`));
+  }
 
   return (
     <div style={{ position: 'relative' }}>
