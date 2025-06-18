@@ -12,6 +12,8 @@ import {
   hasAnyLegalMoves,
   isKingInCheck,
   getCheckingPieces,
+  performSummon,
+  performPromotion,
 } from './logic/moveRules.js';
 import {
   cloneBoard,
@@ -20,55 +22,13 @@ import {
   isBlackPiece,
   isSameTeam,
   boardKey,
+} from './utils/helpers.js';
+import {
+  initialBoard,
+  pieceImages,
   WHITE_PIECES,
   BLACK_PIECES,
-} from './utils/helpers.js';
-
-// Unicode pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
-// Starting layout for a new game
-const initialBoard = [
-  ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'],
-  ['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟'],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  [ '',  '',  '',  '',  '',  '',  '',  ''],
-  ['♙', '♙', '♙', '♙', '♙', '♙', '♙', '♙'],
-  ['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖'],
-];
-
-// Map each Unicode piece to its SVG image file. Assets sourced from https://github.com/lichess-org/lila/tree/master/public/piece
-const pieceImages = {
-  '♙': 'wP.svg',
-  '♟': 'bP.svg',
-  '♘': 'wN.svg',
-  '♞': 'bN.svg',
-  '♖': 'wR.svg',
-  '♜': 'bR.svg',
-  '♗': 'wB.svg',
-  '♝': 'bB.svg',
-  '♕': 'wQ.svg',
-  '♛': 'bQ.svg',
-  '♔': 'wK.svg',
-  '♚': 'bK.svg',
-};
-
-// Places a new piece next to the enemy back rank king as part of the king's
-// summoning ability. Returns a cloned board with the piece added.
-function performSummon(board, row, col, color, pieceType = '♕') {
-  const newBoard = cloneBoard(board);
-  newBoard[row][col] = pieceType;
-  return newBoard;
-}
-
-// Handles pawn promotion. Removes the pawn from its original square and places
-// the chosen piece on the target square.
-function performPromotion(board, row, col, fromRow, fromCol, color, piece) {
-  const newBoard = deepClone(board);
-  newBoard[fromRow][fromCol] = '';
-  newBoard[row][col] = piece;
-  return newBoard;
-}
+} from './constants/pieces.js';
 
 function App() {
   // Current board state as an 8x8 array of piece symbols

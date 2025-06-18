@@ -1,8 +1,9 @@
-// General utility helpers reused across the app
+import {
+    WHITE_PIECES,
+    BLACK_PIECES,
+} from '../constants/pieces.js';
 
-// Lists of piece symbols to quickly determine piece color
-const WHITE_PIECES = ['♙', '♘', '♗', '♖', '♕', '♔'];
-const BLACK_PIECES = ['♟', '♞', '♝', '♜', '♛', '♚'];
+// General utility helpers reused across the app
 
 const isWhitePiece = (p) => WHITE_PIECES.includes(p);
 const isBlackPiece = (p) => BLACK_PIECES.includes(p);
@@ -72,6 +73,4 @@ export {
   isEnemyPiece,
   isSameTeam,
   boardKey,
-  WHITE_PIECES,
-  BLACK_PIECES,
 };

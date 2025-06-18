@@ -5,9 +5,11 @@ import {
     isWhitePiece,
     isBlackPiece,
     isEnemyPiece,
+} from '../utils/helpers.js';
+import {
     WHITE_PIECES,
     BLACK_PIECES,
-  } from '../utils/helpers.js';
+} from '../constants/pieces.js';
 
 // ---- Piece move generators ----
 
@@ -535,6 +537,23 @@ function getValidKingMoves(board, row, col, piece, kingState, castlingRights) {
   return validMoves;
 }
 
+// Places a new piece next to the enemy back rank king as part of the king's
+// summoning ability. Returns a cloned board with the piece added.
+function performSummon(board, row, col, color, pieceType = '♕') {
+  const newBoard = cloneBoard(board);
+  newBoard[row][col] = pieceType;
+  return newBoard;
+}
+
+// Handles pawn promotion. Removes the pawn from its original square and places
+// the chosen piece on the target square.
+function performPromotion(board, row, col, fromRow, fromCol, color, piece) {
+  const newBoard = deepClone(board);
+  newBoard[fromRow][fromCol] = '';
+  newBoard[row][col] = piece;
+  return newBoard;
+}
+
 export {
     getValidPawnMoves,
     getValidRookMoves,
@@ -548,6 +567,8 @@ export {
     isKingInCheck,
     simulateMove,
     filterLegalMoves,
-    hasAnyLegalMoves
+    hasAnyLegalMoves,
+    performSummon,
+    performPromotion,
   };
   
