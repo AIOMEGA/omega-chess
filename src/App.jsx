@@ -15,8 +15,6 @@ import {
   getValidBishopMoves,
   getValidKingMoves,
   filterLegalMoves,
-  hasAnyLegalMoves,
-  isKingInCheck,
 } from './logic/moveRules.js';
 import {
   cloneBoard,
@@ -24,8 +22,12 @@ import {
   isWhitePiece,
   isBlackPiece,
   isSameTeam,
-  boardKey,
 } from './utils/helpers.js';
+import {
+  hasAnyLegalMoves,
+  isKingInCheck,
+  boardKey,
+} from './logic/gameStatus.js';
 
 function App() {
   // Current board state as an 8x8 array of piece symbols

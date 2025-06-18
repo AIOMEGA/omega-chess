@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { cloneBoard, deepClone, boardKey } from '../utils/helpers.js';
+import { cloneBoard, deepClone } from '../utils/helpers.js';
+import { boardKey, checkThreefoldRepetition } from '../logic/gameStatus.js';
 
 export default function useMoveHistory({
   initialBoard,
@@ -76,16 +77,14 @@ export default function useMoveHistory({
           return newClock;
         });
 
-        const key = boardKey(
+        const repeated = checkThreefoldRepetition(
+          positionCountsRef,
           move.board,
           move.turn === 'white' ? 'black' : 'white',
           move.castlingRights,
           move.enPassantTarget
         );
-        const counts = positionCountsRef.current;
-        const count = (counts[key] || 0) + 1;
-        counts[key] = count;
-        if (count >= 3) {
+        if (repeated) {
           setDrawInfo({ type: 'threefold', message: 'Draw by threefold repetition.' });
         }
       }

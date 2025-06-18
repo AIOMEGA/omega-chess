@@ -7,8 +7,8 @@ import {
   getValidBishopMoves,
   getValidKingMoves,
   filterLegalMoves,
-  getCheckingPieces,
 } from '../logic/moveRules.js';
+import { getCheckingPieces } from '../logic/gameStatus.js';
 
 export default function boardHighlights({
   board,
