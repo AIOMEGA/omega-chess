@@ -1105,7 +1105,7 @@ function App() {
                 return (
                   <li key={i} style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
                     <span
-                      onClick={() => jumpToMove(i * 2)}
+                      onClick={() => jumpToMove(whiteMove?.id)}
                       style={{
                         fontWeight: isWhiteBold ? 'bold' : 'normal',
                         minWidth: '140px',
@@ -1115,7 +1115,7 @@ function App() {
                       {turnNum}. {whiteText}
                     </span>
                     <span
-                      onClick={() => jumpToMove(i * 2 + 1)}
+                      onClick={() => jumpToMove(blackMove?.id)}
                       style={{
                         marginLeft: '16px',
                         fontWeight: isBlackBold ? 'bold' : 'normal',
@@ -1164,7 +1164,7 @@ function App() {
                   return (
                     <li key={`a${i}`} style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
                       <span
-                        onClick={() => jumpToMove(g.index)}
+                        onClick={() => jumpToMove(g.first?.id ?? g.index)}
                         style={{
                           fontWeight: isFirstBold ? 'bold' : 'normal',
                           minWidth: '140px',
@@ -1174,7 +1174,7 @@ function App() {
                         🧪 {firstLabel} {firstText}
                       </span>
                       <span
-                        onClick={() => jumpToMove(g.index + 1)}
+                        onClick={() => jumpToMove(g.second?.id ?? g.index + 1)}
                         style={{
                           marginLeft: '16px',
                           fontWeight: isSecondBold ? 'bold' : 'normal',
