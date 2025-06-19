@@ -5,6 +5,7 @@ import { boardKey, checkThreefoldRepetition } from '../logic/gameStatus.js';
 export default function useMoveHistory({
   initialBoard,
   mode,
+  playerColor,
   analysisSavedRef,
   setBoard,
   setTurn,
@@ -15,6 +16,7 @@ export default function useMoveHistory({
   reviewMode,
   reviewModeRef,
   sendMove,
+  sendUndo,
   suppressRef,
   setHalfmoveClock,
   setDrawInfo,
@@ -43,15 +45,16 @@ export default function useMoveHistory({
   };
 
   const updateActivePath = (node) => {
-    const nodes = getPathNodes(node);
-    const moves = nodes.map((n) => ({ id: n.id, ...n.move }));
+    const latestNodes = getPathNodes(latestNodeRef.current);
+    const moves = latestNodes.map((n) => ({ id: n.id, ...n.move }));
     setMoveHistory(moves);
     moveHistoryRef.current = moves;
-    const idx = moves.length - 1;
+    const idx = latestNodes.indexOf(node);
     setHistoryIndex(idx);
     historyIndexRef.current = idx;
     currentNodeRef.current = node;
-    setCanRedo(node.children.length > 0);
+    const atLatest = node === latestNodeRef.current;
+    setCanRedo(!atLatest || node.children.length > 0);
   };
 
   // --- move tree state ---
@@ -179,14 +182,30 @@ export default function useMoveHistory({
         black: { kingSide: true, queenSide: true },
       });
     }
+    const isOwnLast = current === latestNodeRef.current && current.move?.turn === playerColor;
 
-    updateActivePath(parent);
+    if (isOwnLast) {
+        const p = current.parent;
+        if (p) {
+          p.children = p.children.filter((c) => c !== current);
+        }
+        delete nodeMapRef.current[current.id];
+        latestNodeRef.current = parent;
+        currentNodeRef.current = parent;
+        updateActivePath(parent);
+        setReviewMode(false);
+        reviewModeRef.current = false;
+        if (!suppressRef.current) {
+            sendUndo?.();
+          }
+        } else {
+          currentNodeRef.current = parent;
+          updateActivePath(parent);
+          setReviewMode(true);
+          reviewModeRef.current = true;
+        }
+    }, [mode, analysisIndex, analysisHistory, analysisSavedRef, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setReviewMode, initialBoard, playerColor, sendUndo, suppressRef]);
 
-    const reviewing = parent !== latestNodeRef.current;
-    setReviewMode(reviewing);
-    reviewModeRef.current = reviewing;
-  }, [mode, analysisIndex, analysisHistory, analysisSavedRef, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setReviewMode, initialBoard]);
-  
   const redoMove = useCallback(() => {
     if (mode === 'analysis') {
       if (analysisIndex >= analysisHistory.length - 1) return;
@@ -231,7 +250,7 @@ export default function useMoveHistory({
     const reviewing = nextNode !== latestNodeRef.current;
     setReviewMode(reviewing);
     reviewModeRef.current = reviewing;
-  }, [mode, analysisIndex, analysisHistory, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setReviewMode])
+}, [mode, analysisIndex, analysisHistory, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setReviewMode]);
   
   const handleRemoteUndo = useCallback(() => {
     const latest = latestNodeRef.current;
