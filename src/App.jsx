@@ -554,8 +554,7 @@ function App() {
     });
     setLastKingMove(null);
     setTurn('white');
-    setMoveHistory([]);
-    setHistoryIndex(-1);
+    resetHistory();
     setStatusMessage('');
     setCheckmateInfo(null);
     setDrawInfo(null);
@@ -616,9 +615,7 @@ function App() {
 
   const {
     moveHistory,
-    setMoveHistory,
     historyIndex,
-    setHistoryIndex,
     analysisHistory,
     setAnalysisHistory,
     analysisIndex,
@@ -629,6 +626,8 @@ function App() {
     jumpToMove,
     remoteUndoRef,
     positionCountsRef,
+    canRedo,
+    resetHistory,
   } = useMoveHistory({
     initialBoard,
     playerColor,
@@ -1015,7 +1014,7 @@ function App() {
         <div style={{ width: '200px', color: 'white' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
             <button onClick={undoMove} disabled={(mode === 'analysis' ? analysisIndex : historyIndex) < 0}>Undo</button>
-            <button onClick={redoMove} disabled={mode === 'analysis' ? analysisIndex >= analysisHistory.length - 1 : historyIndex >= moveHistory.length - 1}>Redo</button>
+            <button onClick={redoMove} disabled={mode === 'analysis' ? analysisIndex >= analysisHistory.length - 1 : !canRedo}>Redo</button>
             <button onClick={() => setDrawInfo({ type: 'agreement', message: 'Draw by agreement.' })}>Draw</button>
             <button onClick={() => setResignInfo({ winner: turn === 'white' ? 'black' : 'white' })}>Resign</button>
             {mode === 'analysis' && (

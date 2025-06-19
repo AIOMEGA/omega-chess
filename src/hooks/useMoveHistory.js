@@ -4,7 +4,6 @@ import { boardKey, checkThreefoldRepetition } from '../logic/gameStatus.js';
 
 export default function useMoveHistory({
   initialBoard,
-  playerColor,
   mode,
   analysisSavedRef,
   setBoard,
@@ -16,7 +15,6 @@ export default function useMoveHistory({
   reviewMode,
   reviewModeRef,
   sendMove,
-  sendUndo,
   suppressRef,
   setHalfmoveClock,
   setDrawInfo,
@@ -26,12 +24,48 @@ export default function useMoveHistory({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [analysisHistory, setAnalysisHistory] = useState([]);
   const [analysisIndex, setAnalysisIndex] = useState(-1);
+  const [canRedo, setCanRedo] = useState(false);
 
   const moveHistoryRef = useRef([]);
   const historyIndexRef = useRef(-1);
   const remoteUndoRef = useRef(null);
   const recordMoveRef = externalRecordMoveRef ?? useRef(null);
   const positionCountsRef = useRef({});
+
+  const getPathNodes = (node) => {
+    const nodes = [];
+    let n = node;
+    while (n && n.move) {
+      nodes.unshift(n);
+      n = n.parent;
+    }
+    return nodes;
+  };
+
+  const updateActivePath = (node) => {
+    const nodes = getPathNodes(node);
+    const moves = nodes.map((n) => ({ id: n.id, ...n.move }));
+    setMoveHistory(moves);
+    moveHistoryRef.current = moves;
+    const idx = moves.length - 1;
+    setHistoryIndex(idx);
+    historyIndexRef.current = idx;
+    currentNodeRef.current = node;
+    setCanRedo(node.children.length > 0);
+  };
+
+  // --- move tree state ---
+  const nextNodeIdRef = useRef(0);
+  const rootNodeRef = useRef({
+    id: nextNodeIdRef.current++,
+    move: null,
+    parent: null,
+    children: [],
+    timestamp: Date.now(),
+  });
+  const latestNodeRef = useRef(rootNodeRef.current);
+  const currentNodeRef = useRef(rootNodeRef.current);
+  const nodeMapRef = useRef({ [rootNodeRef.current.id]: rootNodeRef.current });
 
   useEffect(() => {
     const key = boardKey(
@@ -52,15 +86,19 @@ export default function useMoveHistory({
         setAnalysisIndex(newHistory.length - 1);
         return;
       }
-      const baseHistory = forcePlay
-        ? moveHistoryRef.current
-        : moveHistory.slice(0, historyIndex + 1);
+      const parent = forcePlay ? latestNodeRef.current : currentNodeRef.current;
+      const node = {
+        id: nextNodeIdRef.current++,
+        move,
+        parent,
+        children: [],
+        timestamp: Date.now(),
+      };
+      parent.children.push(node);
+      nodeMapRef.current[node.id] = node;
+      latestNodeRef.current = node;
 
-      const newHistory = [...baseHistory, move];
-      setMoveHistory(newHistory);
-      moveHistoryRef.current = newHistory;
-      setHistoryIndex(newHistory.length - 1);
-      historyIndexRef.current = newHistory.length - 1;
+      updateActivePath(node);
 
       if (!suppressRef.current) {
         sendMove?.(move);
@@ -89,7 +127,7 @@ export default function useMoveHistory({
         }
       }
     },
-    [mode, analysisHistory, analysisIndex, moveHistory, historyIndex, sendMove, suppressRef, setHalfmoveClock, setDrawInfo]
+    [mode, analysisHistory, analysisIndex, sendMove, suppressRef, setHalfmoveClock, setDrawInfo]
   );
 
   useEffect(() => {
@@ -117,20 +155,17 @@ export default function useMoveHistory({
       setAnalysisIndex(newIndex);
       return;
     }
+    const current = currentNodeRef.current;
+    if (current === rootNodeRef.current) return;
 
-    if (historyIndex < 0) return;
-    const isOwnLast =
-      historyIndex === moveHistory.length - 1 &&
-      moveHistory[historyIndex].turn === playerColor;
-    const newIndex = historyIndex - 1;
+    const parent = current.parent;
 
-    if (newIndex >= 0) {
-      const prev = moveHistory[newIndex];
-      setBoard(cloneBoard(prev.board));
-      setTurn(prev.turn === 'white' ? 'black' : 'white');
-      if (prev.kingState) setKingState(deepClone(prev.kingState));
-      if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
-      setEnPassantTarget(prev.enPassantTarget || null);
+    if (parent && parent.move) {
+      setBoard(cloneBoard(parent.move.board));
+      setTurn(parent.move.turn === 'white' ? 'black' : 'white');
+      if (parent.move.kingState) setKingState(deepClone(parent.move.kingState));
+      if (parent.move.castlingRights) setCastlingRights(deepClone(parent.move.castlingRights));
+      setEnPassantTarget(parent.move.enPassantTarget || null);
     } else {
       setBoard(cloneBoard(initialBoard));
       setTurn('white');
@@ -145,27 +180,13 @@ export default function useMoveHistory({
       });
     }
 
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
+    updateActivePath(parent);
 
-    if (isOwnLast) {
-      setReviewMode(false);
-      reviewModeRef.current = false;
-    } else {
-      setReviewMode(true);
-      reviewModeRef.current = true;
-    }
-
-    if (isOwnLast) {
-      const newHistory = moveHistory.slice(0, -1);
-      setMoveHistory(newHistory);
-      moveHistoryRef.current = newHistory;
-      if (!suppressRef.current) {
-        sendUndo?.();
-      }
-    }
-  }, [mode, analysisIndex, analysisHistory, analysisSavedRef, historyIndex, moveHistory, playerColor, initialBoard, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setHistoryIndex, setMoveHistory, setReviewMode, reviewModeRef, sendUndo, suppressRef]);
-
+    const reviewing = parent !== latestNodeRef.current;
+    setReviewMode(reviewing);
+    reviewModeRef.current = reviewing;
+  }, [mode, analysisIndex, analysisHistory, analysisSavedRef, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setReviewMode, initialBoard]);
+  
   const redoMove = useCallback(() => {
     if (mode === 'analysis') {
       if (analysisIndex >= analysisHistory.length - 1) return;
@@ -180,41 +201,53 @@ export default function useMoveHistory({
       return;
     }
 
-    if (historyIndex >= moveHistory.length - 1) return;
-    const newIndex = historyIndex + 1;
-    const next = moveHistory[newIndex];
-    setBoard(cloneBoard(next.board));
-    setTurn(next.turn === 'white' ? 'black' : 'white');
-    if (next.kingState) setKingState(deepClone(next.kingState));
-    if (next.castlingRights) setCastlingRights(deepClone(next.castlingRights));
-    setEnPassantTarget(next.enPassantTarget || null);
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
+    const current = currentNodeRef.current;
+    let nextNode = null;
+    if (current.children.length > 0) {
+      const path = [];
+      let n = latestNodeRef.current;
+      while (n) {
+        path.unshift(n);
+        n = n.parent;
+      }
+      const idx = path.indexOf(current);
+      if (idx !== -1 && idx < path.length - 1) {
+        nextNode = path[idx + 1];
+      } else {
+        nextNode = current.children[0];
+      }
+    }
 
-    const reviewing = newIndex < moveHistory.length - 1;
+    if (!nextNode || !nextNode.move) return;
+
+    setBoard(cloneBoard(nextNode.move.board));
+    setTurn(nextNode.move.turn === 'white' ? 'black' : 'white');
+    if (nextNode.move.kingState) setKingState(deepClone(nextNode.move.kingState));
+    if (nextNode.move.castlingRights) setCastlingRights(deepClone(nextNode.move.castlingRights));
+    setEnPassantTarget(nextNode.move.enPassantTarget || null);
+
+    updateActivePath(nextNode);
+
+    const reviewing = nextNode !== latestNodeRef.current;
     setReviewMode(reviewing);
     reviewModeRef.current = reviewing;
-  }, [mode, analysisIndex, analysisHistory, historyIndex, moveHistory, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setHistoryIndex, setReviewMode, reviewModeRef]);
-
+  }, [mode, analysisIndex, analysisHistory, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setReviewMode])
+  
   const handleRemoteUndo = useCallback(() => {
-    const currentHistory = moveHistoryRef.current;
-    if (currentHistory.length === 0) return;
+    const latest = latestNodeRef.current;
+    if (latest === rootNodeRef.current) return;
 
-    const newHistory = currentHistory.slice(0, -1);
-    const newIndex = newHistory.length - 1;
+    const parent = latest.parent;
+    parent.children = parent.children.filter((c) => c !== latest);
+    delete nodeMapRef.current[latest.id];
+    latestNodeRef.current = parent;
 
-    setMoveHistory(newHistory);
-    moveHistoryRef.current = newHistory;
-    setHistoryIndex(newIndex);
-    historyIndexRef.current = newIndex;
-
-    if (newIndex >= 0) {
-      const prev = newHistory[newIndex];
-      setBoard(cloneBoard(prev.board));
-      setTurn(prev.turn === 'white' ? 'black' : 'white');
-      if (prev.kingState) setKingState(deepClone(prev.kingState));
-      if (prev.castlingRights) setCastlingRights(deepClone(prev.castlingRights));
-      setEnPassantTarget(prev.enPassantTarget || null);
+    if (parent && parent.move) {
+      setBoard(cloneBoard(parent.move.board));
+      setTurn(parent.move.turn === 'white' ? 'black' : 'white');
+      if (parent.move.kingState) setKingState(deepClone(parent.move.kingState));
+      if (parent.move.castlingRights) setCastlingRights(deepClone(parent.move.castlingRights));
+      setEnPassantTarget(parent.move.enPassantTarget || null);
     } else {
       setBoard(cloneBoard(initialBoard));
       setTurn('white');
@@ -228,14 +261,36 @@ export default function useMoveHistory({
         black: { kingSide: true, queenSide: true },
       });
     }
+
+    updateActivePath(parent);
     setReviewMode(false);
     reviewModeRef.current = false;
-  }, [initialBoard, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setMoveHistory, setHistoryIndex, setReviewMode, reviewModeRef]);
+    }, [initialBoard, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setReviewMode]);
 
-  const jumpToMove = useCallback(
-    (index) => {
-      if (mode === 'analysis') {
-        const move = analysisHistory[index];
+  const resetHistory = useCallback(() => {
+    nextNodeIdRef.current = 0;
+    const root = {
+      id: nextNodeIdRef.current++,
+      move: null,
+      parent: null,
+      children: [],
+      timestamp: Date.now(),
+    };
+    rootNodeRef.current = root;
+    latestNodeRef.current = root;
+    currentNodeRef.current = root;
+    nodeMapRef.current = { [root.id]: root };
+    setMoveHistory([]);
+    moveHistoryRef.current = [];
+    setHistoryIndex(-1);
+    historyIndexRef.current = -1;
+    setCanRedo(false);
+  }, []);
+
+    const jumpToMove = useCallback(
+    (nodeId) => {
+        if (mode === 'analysis') {
+        const move = analysisHistory[nodeId];
         if (move) {
           setBoard(move.board);
           setTurn(move.turn === 'white' ? 'black' : 'white');
@@ -249,39 +304,40 @@ export default function useMoveHistory({
           setCastlingRights(deepClone(analysisSavedRef.current.castlingRights));
           setEnPassantTarget(analysisSavedRef.current.enPassantTarget || null);
         }
-        setAnalysisIndex(index);
-        return;
-      }
+            setAnalysisIndex(nodeId);
+            return;
+        }
 
-      const move = moveHistory[index];
-      if (move) {
-        setBoard(cloneBoard(move.board));
-        setTurn(move.turn === 'white' ? 'black' : 'white');
-        if (move.kingState) setKingState(deepClone(move.kingState));
-        if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
-        setEnPassantTarget(move.enPassantTarget || null);
-      } else {
+        const node = nodeMapRef.current[nodeId];
+      if (!node) return;
+
+      if (node.move) {
+        setBoard(cloneBoard(node.move.board));
+        setTurn(node.move.turn === 'white' ? 'black' : 'white');
+        if (node.move.kingState) setKingState(deepClone(node.move.kingState));
+        if (node.move.castlingRights) setCastlingRights(deepClone(node.move.castlingRights));
+        setEnPassantTarget(node.move.enPassantTarget || null);
+        } else {
         setBoard(cloneBoard(initialBoard));
         setTurn('white');
         setKingState({
-          white: { hasSummoned: false, needsReturn: false, returnedHome: false },
-          black: { hasSummoned: false, needsReturn: false, returnedHome: false },
+            white: { hasSummoned: false, needsReturn: false, returnedHome: false },
+            black: { hasSummoned: false, needsReturn: false, returnedHome: false },
         });
         setEnPassantTarget(null);
         setCastlingRights({
-          white: { kingSide: true, queenSide: true },
-          black: { kingSide: true, queenSide: true },
+            white: { kingSide: true, queenSide: true },
+            black: { kingSide: true, queenSide: true },
         });
-      }
-      setHistoryIndex(index);
-      historyIndexRef.current = index;
+        }
+        updateActivePath(node);
 
-      const reviewing = index < moveHistory.length - 1;
-      setReviewMode(reviewing);
-      reviewModeRef.current = reviewing;
+        const reviewing = node !== latestNodeRef.current;
+        setReviewMode(reviewing);
+        reviewModeRef.current = reviewing;
     },
-    [mode, analysisHistory, analysisSavedRef, moveHistory, initialBoard, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setHistoryIndex, setReviewMode, reviewModeRef]
-  );
+    [mode, analysisHistory, analysisSavedRef, initialBoard, setBoard, setTurn, setKingState, setCastlingRights, setEnPassantTarget, setAnalysisIndex, setReviewMode, reviewModeRef]
+    );
 
   useEffect(() => {
     moveHistoryRef.current = moveHistory;
@@ -309,5 +365,7 @@ export default function useMoveHistory({
     historyIndexRef,
     remoteUndoRef,
     positionCountsRef,
+    canRedo,
+    resetHistory,
   };
 }
