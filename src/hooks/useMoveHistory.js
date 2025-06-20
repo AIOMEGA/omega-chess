@@ -33,6 +33,7 @@ export default function useMoveHistory({
   const remoteUndoRef = useRef(null);
   const recordMoveRef = externalRecordMoveRef ?? useRef(null);
   const positionCountsRef = useRef({});
+  const redoCandidateRef = useRef(null);
 
   const getPathNodes = (node) => {
     const nodes = [];
@@ -69,6 +70,13 @@ export default function useMoveHistory({
   const latestNodeRef = useRef(rootNodeRef.current);
   const currentNodeRef = useRef(rootNodeRef.current);
   const nodeMapRef = useRef({ [rootNodeRef.current.id]: rootNodeRef.current });
+  const removeNode = (node) => {
+    const p = node.parent;
+    if (p) {
+      p.children = p.children.filter((c) => c !== node);
+    }
+    delete nodeMapRef.current[node.id];
+  };
 
   useEffect(() => {
     const key = boardKey(
@@ -90,6 +98,12 @@ export default function useMoveHistory({
         return;
       }
       const parent = forcePlay ? latestNodeRef.current : currentNodeRef.current;
+
+      if (redoCandidateRef.current) {
+        removeNode(redoCandidateRef.current);
+        redoCandidateRef.current = null;
+      }
+
       const node = {
         id: nextNodeIdRef.current++,
         move,
@@ -185,13 +199,9 @@ export default function useMoveHistory({
     const isOwnLast = current === latestNodeRef.current && current.move?.turn === playerColor;
 
     if (isOwnLast) {
-        const p = current.parent;
-        if (p) {
-          p.children = p.children.filter((c) => c !== current);
-        }
-        delete nodeMapRef.current[current.id];
         latestNodeRef.current = parent;
         currentNodeRef.current = parent;
+        redoCandidateRef.current = current;
         updateActivePath(parent);
         setReviewMode(false);
         reviewModeRef.current = false;
@@ -222,7 +232,11 @@ export default function useMoveHistory({
 
     const current = currentNodeRef.current;
     let nextNode = null;
-    if (current.children.length > 0) {
+    const candidate = redoCandidateRef.current;
+    const useCandidate = candidate && candidate.parent === current;
+    if (useCandidate) {
+      nextNode = candidate;
+    } else if (current.children.length > 0) {
       const path = [];
       let n = latestNodeRef.current;
       while (n) {
@@ -244,6 +258,14 @@ export default function useMoveHistory({
     if (nextNode.move.kingState) setKingState(deepClone(nextNode.move.kingState));
     if (nextNode.move.castlingRights) setCastlingRights(deepClone(nextNode.move.castlingRights));
     setEnPassantTarget(nextNode.move.enPassantTarget || null);
+
+    if (useCandidate) {
+        latestNodeRef.current = nextNode;
+        redoCandidateRef.current = null;
+        if (!suppressRef.current) {
+            sendMove?.(nextNode.move);
+        }
+    }
 
     updateActivePath(nextNode);
 
