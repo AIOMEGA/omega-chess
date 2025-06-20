@@ -89,7 +89,7 @@ export default function useMoveHistory({
   }, [initialBoard]);
 
   const recordMove = useCallback(
-    (move, forcePlay = false) => {
+    (move, forcePlay = false, skipCounts = false) => {
       if (mode === 'analysis' && !forcePlay) {
         const newHistory = analysisHistory.slice(0, analysisIndex + 1);
         newHistory.push(move);
@@ -99,6 +99,9 @@ export default function useMoveHistory({
       }
       const parent = forcePlay ? latestNodeRef.current : currentNodeRef.current;
 
+      const sanitizedMove = { ...move };
+      delete sanitizedMove.skipCounts;
+
       if (redoCandidateRef.current) {
         removeNode(redoCandidateRef.current);
         redoCandidateRef.current = null;
@@ -106,7 +109,7 @@ export default function useMoveHistory({
 
       const node = {
         id: nextNodeIdRef.current++,
-        move,
+        move: sanitizedMove,
         parent,
         children: [],
         timestamp: Date.now(),
@@ -118,10 +121,10 @@ export default function useMoveHistory({
       updateActivePath(node);
 
       if (!suppressRef.current) {
-        sendMove?.(move);
+        sendMove?.(sanitizedMove);
       }
 
-      if (mode !== 'analysis' || forcePlay) {
+      if (!skipCounts && (mode !== 'analysis' || forcePlay)) {
         const isPawnMove = move.piece === '♙' || move.piece === '♟';
         const isCapture = !!move.captured;
         setHalfmoveClock((hc) => {
@@ -263,9 +266,10 @@ export default function useMoveHistory({
         latestNodeRef.current = nextNode;
         redoCandidateRef.current = null;
         if (!suppressRef.current) {
-            sendMove?.(nextNode.move);
+          sendMove?.({ ...nextNode.move, skipCounts: true });
         }
     }
+  
 
     updateActivePath(nextNode);
 

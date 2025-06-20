@@ -586,7 +586,7 @@ function App() {
         if (move.kingState) setKingState(deepClone(move.kingState));
         if (move.castlingRights) setCastlingRights(deepClone(move.castlingRights));
         setEnPassantTarget(move.enPassantTarget || null);
-        if (recordMoveRef.current) recordMoveRef.current(move, true);
+        if (recordMoveRef.current) recordMoveRef.current(move, true, move.skipCounts);
         setReviewMode(false);
         reviewModeRef.current = false;
         suppressRef.current = false;
